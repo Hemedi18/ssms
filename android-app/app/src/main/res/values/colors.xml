@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary_navy">#0D1B2A</color>
+    <color name="primary_navy_light">#1B263B</color>
+    <color name="accent_blue">#1976D2</color>
+    <color name="background_light">#F8F9FA</color>
+    <color name="surface_card">#FFFFFF</color>
+    <color name="status_green">#10B981</color>
+    <color name="status_orange">#F59E0B</color>
+    <color name="status_red">#EF4444</color>
+</resources>
