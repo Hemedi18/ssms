@@ -259,6 +259,12 @@
         </div>
 
         <div class="topbar-right">
+          <!-- Git Version & cPanel Live Update Pill -->
+          <button id="btn-git-update" class="btn-git-update" title="Check System Version & cPanel Updates" onclick="window.openGitSyncModal()">
+            <span class="git-status-dot" id="git-status-dot"></span>
+            <span id="git-status-text">Checking version...</span>
+          </button>
+
           <button id="btn-kill-switch" class="btn-killswitch" title="Emergency Pause Outbound Jobs">
             <span class="killswitch-indicator"></span>
             <span id="killswitch-text">DISPATCH ACTIVE</span>
@@ -292,6 +298,24 @@
           </button>
         </div>
       </header>
+
+      <!-- Live Git / cPanel Update Notification Bar -->
+      <div id="git-update-banner" class="git-update-banner" style="display: none;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="git-status-dot has-update"></span>
+          <span style="font-weight: 600; font-size: 13px;" id="git-update-banner-text">
+            🚀 New System Update Available: New commits are ready on GitHub!
+          </span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; margin-left: auto;">
+          <button id="btn-git-banner-update" class="btn-primary btn-sm" style="background: #10b981; border: none; font-weight: 600;" onclick="window.openGitSyncModal()">
+            Update & Restart Server
+          </button>
+          <button id="btn-git-banner-dismiss" class="btn-secondary btn-sm" style="background: transparent; border: none; color: #94a3b8;" onclick="document.getElementById('git-update-banner').style.display='none'">
+            Dismiss
+          </button>
+        </div>
+      </div>
 
       <!-- SMS Balance & Package Expiration Top Banner Bar -->
       <div class="bundle-top-banner" id="bundle-banner">
@@ -1812,6 +1836,68 @@ print(response.json())
           <button type="submit" class="btn-primary" style="flex: 1;">Add to Blacklist</button>
         </div>
       </form>
+    </div>
+  </div>
+  <!-- Modal: Git System Version & cPanel Live Updater -->
+  <div id="modal-git-sync" class="modal-overlay">
+    <div class="modal-card" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3>System Version & cPanel Live Sync</h3>
+        <button class="modal-close-btn" data-close="modal-git-sync" onclick="window.closeGitSyncModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div style="padding: 4px 0 16px;">
+        <p style="color: var(--text-dim); font-size: 13px; line-height: 1.5; margin-bottom: 16px;">
+          Inspect commit alignment between this cPanel server and your GitHub repository (<code style="color: var(--color-cyan);">Hemedi18/ssms</code>). Trigger one-click git pull and Phusion Passenger server restart.
+        </p>
+
+        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; font-size: 13px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: var(--text-dim);">Server Commit:</span>
+            <strong id="git-modal-local-commit" style="font-family: var(--font-mono); color: #fff;">...</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: var(--text-dim);">Latest GitHub Commit:</span>
+            <strong id="git-modal-remote-commit" style="font-family: var(--font-mono); color: var(--color-cyan);">...</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: var(--text-dim);">Branch:</span>
+            <span id="git-modal-branch" style="color: #cbd5e1; font-weight: 600;">main (origin)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+            <span style="color: var(--text-dim);">Update Status:</span>
+            <span id="git-modal-status-badge" class="badge">Checking...</span>
+          </div>
+        </div>
+
+        <div id="git-modal-commit-msg-box" style="background: rgba(99, 102, 241, 0.08); border: 1px dashed rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 12px; font-size: 12px; color: #c7d2fe; margin-bottom: 16px; display: none;">
+          <div style="font-weight: 700; margin-bottom: 4px; color: #a5b4fc;">Pending Update Commit:</div>
+          <div id="git-modal-commit-msg">...</div>
+        </div>
+
+        <div id="git-sync-progress" style="display: none; padding: 14px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); margin-bottom: 16px; text-align: center;">
+          <div style="font-size: 13px; font-weight: 600; color: #34d399;" id="git-sync-step-text">
+            🔄 Pulling updates from GitHub and restarting cPanel Passenger...
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 20px;">
+          <button type="button" class="btn-secondary" onclick="window.checkGitStatus(true)" style="width: auto;">
+            Check for Updates
+          </button>
+          <button type="button" class="btn-secondary" onclick="window.closeGitSyncModal()" style="margin-left: auto;">
+            Close
+          </button>
+          <button type="button" class="btn-primary" id="btn-trigger-git-sync" style="background: #10b981; border: none; font-weight: 700;">
+            Update & Restart cPanel
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

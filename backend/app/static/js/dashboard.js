@@ -2089,8 +2089,146 @@
     return `${days}d ago`;
   }
 
+  // ========================================================================
+  // GIT SYNCHRONIZATION & CPANEL LIVE UPDATE ENGINE
+  // ========================================================================
+  let gitCheckTimer = null;
+
+  window.checkGitStatus = async function (force = false) {
+    const pillBtn = document.getElementById('btn-git-update');
+    const dot = document.getElementById('git-status-dot');
+    const text = document.getElementById('git-status-text');
+    const banner = document.getElementById('git-update-banner');
+    const bannerText = document.getElementById('git-update-banner-text');
+
+    try {
+      const res = await apiFetch('/admin/system/git-status' + (force ? '?force=true' : ''));
+      if (!res || !res.success) {
+        if (text) text.textContent = 'v1.0 (Live)';
+        return;
+      }
+
+      // Update Topbar Pill
+      if (res.has_update) {
+        if (pillBtn) pillBtn.classList.add('has-update');
+        if (dot) dot.classList.add('has-update');
+        if (text) text.textContent = `Update Available (${res.behind || 1} new)`;
+
+        // Show Notification Banner
+        if (banner) {
+          banner.style.display = 'flex';
+          if (bannerText) {
+            const commitSubject = res.remote_subject ? ` — "${escapeHtml(res.remote_subject)}"` : '';
+            bannerText.innerHTML = `🚀 <strong>System Update Ready:</strong> ${res.behind || 1} new commit(s) ready on GitHub${commitSubject}. Click to deploy.`;
+          }
+        }
+      } else {
+        if (pillBtn) pillBtn.classList.remove('has-update');
+        if (dot) dot.classList.remove('has-update');
+        if (text) text.textContent = `v1.0 (${res.local_commit || 'Up to date'})`;
+        if (banner) banner.style.display = 'none';
+      }
+
+      // Update Modal content if modal elements exist
+      const modalLocal = document.getElementById('git-modal-local-commit');
+      const modalRemote = document.getElementById('git-modal-remote-commit');
+      const modalBranch = document.getElementById('git-modal-branch');
+      const modalStatus = document.getElementById('git-modal-status-badge');
+      const msgBox = document.getElementById('git-modal-commit-msg-box');
+      const msgText = document.getElementById('git-modal-commit-msg');
+      const syncBtn = document.getElementById('btn-trigger-git-sync');
+
+      if (modalLocal) modalLocal.textContent = res.local_commit || 'unknown';
+      if (modalRemote) modalRemote.textContent = res.remote_commit || res.local_commit || 'unknown';
+      if (modalBranch) modalBranch.textContent = `${res.branch || 'main'} (origin)`;
+
+      if (modalStatus) {
+        if (res.has_update) {
+          modalStatus.className = 'badge';
+          modalStatus.style.background = 'rgba(245, 158, 11, 0.2)';
+          modalStatus.style.color = '#fbbf24';
+          modalStatus.textContent = `Update Available (${res.behind} behind)`;
+        } else {
+          modalStatus.className = 'badge';
+          modalStatus.style.background = 'rgba(16, 185, 129, 0.2)';
+          modalStatus.style.color = '#34d399';
+          modalStatus.textContent = 'Up to Date (Synced)';
+        }
+      }
+
+      if (res.remote_subject && msgBox && msgText) {
+        msgBox.style.display = 'block';
+        msgText.textContent = res.remote_subject;
+      } else if (msgBox) {
+        msgBox.style.display = 'none';
+      }
+
+      if (syncBtn) {
+        syncBtn.disabled = !res.has_update && !force;
+        syncBtn.textContent = res.has_update ? 'Update & Restart cPanel' : 'Force Re-sync Server';
+      }
+    } catch (err) {
+      console.warn('Git status check failed:', err);
+      if (text) text.textContent = 'v1.0 (Live)';
+    }
+  };
+
+  window.openGitSyncModal = function () {
+    const modal = document.getElementById('modal-git-sync');
+    if (modal) modal.classList.add('active');
+    window.checkGitStatus(true);
+  };
+
+  window.closeGitSyncModal = function () {
+    const modal = document.getElementById('modal-git-sync');
+    if (modal) modal.classList.remove('active');
+    const prog = document.getElementById('git-sync-progress');
+    if (prog) prog.style.display = 'none';
+  };
+
+  window.triggerGitSync = async function () {
+    const syncBtn = document.getElementById('btn-trigger-git-sync');
+    const prog = document.getElementById('git-sync-progress');
+    const stepText = document.getElementById('git-sync-step-text');
+
+    if (!confirm('This will pull the latest commits from GitHub and restart the Phusion Passenger application on cPanel. Continue?')) {
+      return;
+    }
+
+    if (syncBtn) syncBtn.disabled = true;
+    if (prog) prog.style.display = 'block';
+    if (stepText) stepText.textContent = 'Pulling updates from GitHub and reloading server...';
+
+    try {
+      const res = await apiFetch('/admin/system/git-sync', { method: 'POST' });
+      showToast(res.message || 'Server updated and reloaded successfully!', 'success');
+      if (stepText) stepText.textContent = `✅ Complete! ${res.message || 'Reloading page in 2s...'}`;
+      setTimeout(() => {
+        window.location.reload();
+      }, 1800);
+    } catch (err) {
+      showToast(err.message || 'Failed to update server from git', 'error');
+      if (syncBtn) syncBtn.disabled = false;
+      if (prog) prog.style.display = 'none';
+    }
+  };
+
   // --- Initialize Application on Load ---
   document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
+
+    // Hook Git sync button in modal
+    const syncBtn = document.getElementById('btn-trigger-git-sync');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', window.triggerGitSync);
+    }
+
+    // Periodic Git check every 60 seconds
+    setInterval(() => {
+      if (authToken) {
+        window.checkGitStatus(false);
+      }
+    }, 60000);
   });
 })();
+

@@ -715,3 +715,38 @@ def test_webhook_delivery(
         "response_code": result.response_status_code,
         "error": result.error_message,
     }
+
+
+# -------------------------------------------------------------
+# 13. Git Synchronization & cPanel Auto-Update
+# -------------------------------------------------------------
+@router.get("/system/git-status")
+def get_system_git_status(
+    force: bool = False,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Checks local commit against remote repository and returns update availability."""
+    from app.services.git_sync_service import get_git_sync_status
+    return get_git_sync_status(force_refresh=force)
+
+
+@router.post("/system/git-sync")
+def trigger_system_git_sync(
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """
+    Executes automated git pull/reset from GitHub, touches tmp/restart.txt,
+    and reloads the cPanel Phusion Passenger server.
+    """
+    role = admin.get("role")
+    if role not in ("super_admin", "superadmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin privileges required to update and restart the server.",
+        )
+    from app.services.git_sync_service import perform_git_sync
+    result = perform_git_sync()
+    if not result.get("success"):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.get("error"))
+    return result
+
