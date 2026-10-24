@@ -8,6 +8,7 @@ import com.simsms.gateway.data.local.entities.LocalIncomingMessage
 import com.simsms.gateway.data.local.entities.LocalLog
 import com.simsms.gateway.data.local.entities.LocalMessage
 import com.simsms.gateway.service.GatewayForegroundService
+import com.simsms.gateway.service.SimSlotInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,9 @@ class GatewayViewModel(application: Application) : AndroidViewModel(application)
     val simPhoneNumber: String?
         get() = repository.smsManager.getSimPhoneNumber()
 
+    val availableSimSlots: List<SimSlotInfo>
+        get() = repository.smsManager.getAvailableSimSlots()
+
     fun testConnection(url: String) {
         viewModelScope.launch {
             _isConnecting.value = true
@@ -120,11 +124,11 @@ class GatewayViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun sendManualSms(destination: String, text: String) {
+    fun sendManualSms(destination: String, text: String, simSlot: Int? = null) {
         viewModelScope.launch {
             _isSendingSms.value = true
             _sendResult.value = null
-            val result = repository.sendManualSms(destination, text)
+            val result = repository.sendManualSms(destination, text, simSlot)
             _isSendingSms.value = false
             if (result.isSuccess) {
                 _sendResult.value = Pair(true, "SMS queued and dispatched with ID: ${result.getOrNull()}")

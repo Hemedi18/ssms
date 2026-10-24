@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 class SmsStatusReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        // CRITICAL: Capture resultCode immediately on the main thread before background dispatch
+        val capturedResultCode = resultCode
         val action = intent.action ?: return
         val messageId = intent.getStringExtra(EXTRA_MESSAGE_ID) ?: return
         val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0)
@@ -28,23 +30,21 @@ class SmsStatusReceiver : BroadcastReceiver() {
             try {
                 when (action) {
                     ACTION_SMS_SENT -> {
-                        val resultCode = resultCode
-                        if (resultCode == Activity.RESULT_OK) {
+                        if (capturedResultCode == Activity.RESULT_OK) {
                             Log.i(TAG, "SMS part $partIndex/$totalParts sent OK for message $messageId")
                             repository.onSmsPartSent(messageId, partIndex, totalParts)
                         } else {
-                            val errorDesc = getSmsErrorDescription(resultCode)
-                            Log.e(TAG, "SMS part $partIndex/$totalParts failed ($errorDesc) for message $messageId")
+                            val errorDesc = getSmsErrorDescription(capturedResultCode)
+                            Log.e(TAG, "SMS part $partIndex/$totalParts failed ($errorDesc, code=$capturedResultCode) for message $messageId")
                             repository.onSmsSendFailed(messageId, errorDesc)
                         }
                     }
                     ACTION_SMS_DELIVERED -> {
-                        val resultCode = resultCode
-                        if (resultCode == Activity.RESULT_OK) {
+                        if (capturedResultCode == Activity.RESULT_OK) {
                             Log.i(TAG, "Carrier delivery report confirmed for message $messageId")
                             repository.onSmsDelivered(messageId)
                         } else {
-                            Log.w(TAG, "Delivery receipt failed with code $resultCode for message $messageId")
+                            Log.w(TAG, "Delivery receipt reported code $capturedResultCode for message $messageId")
                         }
                     }
                 }

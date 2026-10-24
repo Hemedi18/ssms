@@ -7,20 +7,52 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import select, func, desc, and_, or_
 
-from app.api.deps import get_db, get_current_admin
+from app.api.deps import get_db, get_current_admin, require_role
 from app.core.config import settings
-from app.core.security import generate_api_key
+from app.core.security import generate_api_key, hash_password
 from app.models.api_key import ApiKey
 from app.models.device import GatewayDevice, PairingCode
 from app.models.message import Message, MessageEvent
 from app.models.incoming_message import IncomingMessage
 from app.models.webhook import WebhookSubscription, WebhookDelivery
 from app.models.audit import AuditEvent
-from app.services.device_service import create_pairing_code
+from app.models.tenant import Tenant, User
+from app.models.credit_transaction import CreditTransaction
+from app.models.dnd_and_moderation import DndBlacklist, ContentModerationRule
+from app.services.device_service import (
+    create_pairing_code,
+    set_kill_switch,
+    get_kill_switch_status,
+)
 from app.services.webhook_service import deliver_webhook_sync, queue_event
 from app.services.audit_service import record_audit_event
+from app.services.bundle_service import (
+    get_bundle_summary,
+    topup_bundle,
+    list_credit_transactions,
+)
+from app.services.message_service import modify_message, batch_action_messages
+from app.schemas.message import (
+    MessageResponse,
+    MessageModifyRequest,
+    BatchActionRequest,
+    BatchActionResponse,
+)
+from app.schemas.admin_ext import (
+    TenantCreate,
+    TenantUpdate,
+    TenantResponse,
+    UserCreate,
+    UserResponse,
+    DndBlacklistCreate,
+    DndBlacklistResponse,
+    ModerationRuleCreate,
+    ModerationRuleResponse,
+    KillSwitchRequest,
+    KillSwitchResponse,
+)
 
 router = APIRouter(prefix="/admin", tags=["Admin Portal"])
 
@@ -33,11 +65,21 @@ class ApiKeyCreateAdmin(BaseModel):
     scopes: List[str] = Field(default=["sms:send", "sms:read"])
     rate_limit: int = Field(default=60, ge=1, le=1000)
     expires_in_days: Optional[int] = Field(default=None, ge=1)
+    tenant_id: Optional[str] = None
+    allowed_ips: Optional[str] = None
 
 
 class PairingCodeAdminRequest(BaseModel):
     device_name: str = Field(default="Android Phone", min_length=2, max_length=100)
     expires_in_seconds: int = Field(default=600, ge=60, le=3600)
+    tenant_id: Optional[str] = None
+
+
+class BundleTopupRequest(BaseModel):
+    credits: int = Field(..., ge=1, le=1000000, description="SMS credits to add")
+    extend_days: Optional[int] = Field(default=30, ge=1, le=365, description="Days to extend expiration")
+    plan_name: Optional[str] = Field(default=None, max_length=100)
+    tenant_id: Optional[str] = None
 
 
 # -------------------------------------------------------------
@@ -45,47 +87,82 @@ class PairingCodeAdminRequest(BaseModel):
 # -------------------------------------------------------------
 @router.get("/stats")
 def get_dashboard_stats(
+    tenant_id: Optional[str] = None,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     """
     Returns complete real-time dashboard statistics:
-    - Message counts by status
-    - Inbound messages count
-    - Gateway device online/offline count
-    - Webhook health and delivery counts
-    - 24-hour and 7-day timeseries data for Chart.js
-    - Recipient carrier / network breakdown
-    - Recent live activity log
+    - Message counts by status (including pending_approval, scheduled)
+    - Tanzania MNO network breakdown
+    - Device and SIM health
+    - Kill-switch state
+    - Timeseries for Chart.js
     """
-    now = datetime.now(timezone.utc)
+    effective_tenant_id = admin.get("tenant_id") or tenant_id
 
-    # 1. Message status counts
-    total_msgs = db.scalar(select(func.count(Message.id))) or 0
-    queued_msgs = db.scalar(select(func.count(Message.id)).where(Message.status == "queued")) or 0
-    sending_msgs = db.scalar(select(func.count(Message.id)).where(Message.status.in_(["dispatched", "sending"]))) or 0
-    sent_msgs = db.scalar(select(func.count(Message.id)).where(Message.status == "sent")) or 0
-    delivered_msgs = db.scalar(select(func.count(Message.id)).where(Message.status == "delivered")) or 0
-    failed_msgs = db.scalar(select(func.count(Message.id)).where(Message.status == "failed")) or 0
+    # Base query filters
+    msg_filter = []
+    if effective_tenant_id:
+        msg_filter.append(Message.tenant_id == effective_tenant_id)
 
-    # 2. Inbound messages count
-    incoming_msgs = db.scalar(select(func.count(IncomingMessage.id))) or 0
+    def _count_status(st: str) -> int:
+        q = select(func.count(Message.id)).where(Message.status == st)
+        if msg_filter:
+            q = q.where(*msg_filter)
+        return db.scalar(q) or 0
 
-    # 3. Device counts
-    total_devices = db.scalar(select(func.count(GatewayDevice.id)).where(GatewayDevice.is_revoked == False)) or 0
-    online_devices = db.scalar(
-        select(func.count(GatewayDevice.id)).where(
-            and_(GatewayDevice.is_online == True, GatewayDevice.is_revoked == False)
-        )
+    total_msgs = db.scalar(
+        select(func.count(Message.id)).where(*msg_filter) if msg_filter else select(func.count(Message.id))
     ) or 0
+
+    pending_approval = _count_status("pending_approval")
+    scheduled_msgs = _count_status("scheduled")
+    queued_msgs = _count_status("queued")
+    sending_msgs = db.scalar(
+        select(func.count(Message.id))
+        .where(Message.status.in_(["dispatched", "sending"]))
+        .where(*msg_filter) if msg_filter else select(func.count(Message.id)).where(Message.status.in_(["dispatched", "sending"]))
+    ) or 0
+    sent_msgs = _count_status("sent")
+    delivered_msgs = _count_status("delivered")
+    failed_msgs = _count_status("failed")
+    rejected_msgs = _count_status("rejected")
+
+    # Inbound messages
+    inbound_q = select(func.count(IncomingMessage.id))
+    if effective_tenant_id:
+        inbound_q = inbound_q.where(IncomingMessage.tenant_id == effective_tenant_id)
+    incoming_msgs = db.scalar(inbound_q) or 0
+
+    # Devices
+    dev_q = select(func.count(GatewayDevice.id)).where(GatewayDevice.is_revoked == False)
+    if effective_tenant_id:
+        dev_q = dev_q.where(or_(GatewayDevice.tenant_id == effective_tenant_id, GatewayDevice.is_shared_pool == True))
+    total_devices = db.scalar(dev_q) or 0
+
+    online_dev_q = select(func.count(GatewayDevice.id)).where(
+        and_(GatewayDevice.is_online == True, GatewayDevice.is_revoked == False)
+    )
+    if effective_tenant_id:
+        online_dev_q = online_dev_q.where(or_(GatewayDevice.tenant_id == effective_tenant_id, GatewayDevice.is_shared_pool == True))
+    online_devices = db.scalar(online_dev_q) or 0
     offline_devices = max(0, total_devices - online_devices)
 
-    # 4. Webhook deliveries
+    # Webhooks
     total_webhooks = db.scalar(select(func.count(WebhookSubscription.id)).where(WebhookSubscription.is_active == True)) or 0
     delivered_webhooks = db.scalar(select(func.count(WebhookDelivery.id)).where(WebhookDelivery.status == "delivered")) or 0
     failed_webhooks = db.scalar(select(func.count(WebhookDelivery.id)).where(WebhookDelivery.status == "failed")) or 0
 
-    # 5. Timeseries for Chart.js (Last 12 hours hourly slots)
+    # Tanzania MNO Breakdown
+    mno_query = select(Message.detected_mno, func.count(Message.id))
+    if msg_filter:
+        mno_query = mno_query.where(*msg_filter)
+    mno_rows = db.execute(mno_query.group_by(Message.detected_mno)).fetchall()
+    mno_breakdown = {row[0] or "UNKNOWN": row[1] for row in mno_rows}
+
+    # Timeseries (Last 12 hours)
+    now = datetime.now(timezone.utc)
     timeseries_labels = []
     timeseries_sent = []
     timeseries_delivered = []
@@ -93,83 +170,46 @@ def get_dashboard_stats(
     timeseries_received = []
 
     for i in range(11, -1, -1):
-        slot_start = now - timedelta(hours=i + 1)
-        slot_end = now - timedelta(hours=i)
-        label = slot_end.strftime("%H:00")
-        timeseries_labels.append(label)
+        slot_start = (now - timedelta(hours=i + 1)).replace(minute=0, second=0, microsecond=0)
+        slot_end = slot_start + timedelta(hours=1)
+        timeseries_labels.append(slot_start.strftime("%H:00"))
 
-        s_count = db.scalar(
-            select(func.count(Message.id)).where(
-                and_(Message.created_at >= slot_start, Message.created_at < slot_end)
-            )
-        ) or 0
-        d_count = db.scalar(
-            select(func.count(Message.id)).where(
+        def _count_slot(status_name: str) -> int:
+            sq = select(func.count(Message.id)).where(
                 and_(
-                    Message.status == "delivered",
-                    Message.updated_at >= slot_start,
-                    Message.updated_at < slot_end,
+                    Message.status == status_name,
+                    Message.created_at >= slot_start,
+                    Message.created_at < slot_end,
                 )
             )
-        ) or 0
-        f_count = db.scalar(
-            select(func.count(Message.id)).where(
-                and_(
-                    Message.status == "failed",
-                    Message.updated_at >= slot_start,
-                    Message.updated_at < slot_end,
-                )
+            if msg_filter:
+                sq = sq.where(*msg_filter)
+            return db.scalar(sq) or 0
+
+        timeseries_sent.append(_count_slot("sent"))
+        timeseries_delivered.append(_count_slot("delivered"))
+        timeseries_failed.append(_count_slot("failed"))
+
+        rx_q = select(func.count(IncomingMessage.id)).where(
+            and_(
+                IncomingMessage.received_at_device >= slot_start,
+                IncomingMessage.received_at_device < slot_end,
             )
-        ) or 0
-        r_count = db.scalar(
-            select(func.count(IncomingMessage.id)).where(
-                and_(
-                    IncomingMessage.created_at >= slot_start,
-                    IncomingMessage.created_at < slot_end,
-                )
-            )
-        ) or 0
+        )
+        if effective_tenant_id:
+            rx_q = rx_q.where(IncomingMessage.tenant_id == effective_tenant_id)
+        timeseries_received.append(db.scalar(rx_q) or 0)
 
-        timeseries_sent.append(s_count)
-        timeseries_delivered.append(d_count)
-        timeseries_failed.append(f_count)
-        timeseries_received.append(r_count)
-
-    # 6. Carrier breakdown based on destination prefix
-    # E.g., Tanzania prefixes: Vodacom (74, 75, 76), Airtel (68, 69, 78), Tigo (65, 67, 71), Halotel (61, 62)
-    messages_sample = db.scalars(select(Message.to).limit(200)).all()
-    carriers = {"Vodacom": 0, "Airtel": 0, "Tigo": 0, "Halotel": 0, "Other": 0}
-    for phone in messages_sample:
-        p = phone.replace("+255", "").replace("0", "", 1)
-        if any(p.startswith(pref) for pref in ["74", "75", "76"]):
-            carriers["Vodacom"] += 1
-        elif any(p.startswith(pref) for pref in ["68", "69", "78"]):
-            carriers["Airtel"] += 1
-        elif any(p.startswith(pref) for pref in ["65", "67", "71"]):
-            carriers["Tigo"] += 1
-        elif any(p.startswith(pref) for pref in ["61", "62"]):
-            carriers["Halotel"] += 1
-        else:
-            carriers["Other"] += 1
-
-    # 7. Recent activity log (latest 15 events)
-    recent_audits = db.scalars(
-        select(AuditEvent).order_by(desc(AuditEvent.created_at)).limit(15)
-    ).all()
-    activities = [
-        {
-            "id": a.id,
-            "action": a.action,
-            "actor": f"{a.actor_type}:{a.actor_id or 'sys'}",
-            "details": a.details,
-            "created_at": a.created_at.isoformat(),
-        }
-        for a in recent_audits
-    ]
-
-    # Calculate success rate
-    completed = delivered_msgs + sent_msgs + failed_msgs
-    success_rate = round(((delivered_msgs + sent_msgs) / completed * 100), 1) if completed > 0 else 100.0
+    # Recent Audit Log
+    recent_logs = []
+    audit_events = db.scalars(select(AuditEvent).order_by(desc(AuditEvent.created_at)).limit(10)).all()
+    for ev in audit_events:
+        recent_logs.append({
+            "action": ev.action,
+            "actor": ev.actor_id or "system",
+            "time": ev.created_at.strftime("%H:%M:%S"),
+            "details": ev.details or {},
+        })
 
     return {
         "summary": {
@@ -179,18 +219,17 @@ def get_dashboard_stats(
             "sent": sent_msgs,
             "delivered": delivered_msgs,
             "failed": failed_msgs,
-            "incoming_messages": incoming_msgs,
-            "success_rate_percent": success_rate,
-            "devices": {
-                "total": total_devices,
-                "online": online_devices,
-                "offline": offline_devices,
-            },
-            "webhooks": {
-                "total": total_webhooks,
-                "delivered": delivered_webhooks,
-                "failed": failed_webhooks,
-            },
+            "rejected": rejected_msgs,
+            "pending_approval": pending_approval,
+            "scheduled": scheduled_msgs,
+            "devices": total_devices,
+            "devices_online": online_devices,
+            "devices_offline": offline_devices,
+            "total_devices": total_devices,
+            "incoming": incoming_msgs,
+            "webhooks_active": total_webhooks,
+            "webhooks_delivered": delivered_webhooks,
+            "webhooks_failed": failed_webhooks,
         },
         "charts": {
             "timeseries": {
@@ -201,34 +240,361 @@ def get_dashboard_stats(
                 "received": timeseries_received,
             },
             "status_donut": {
-                "labels": ["Delivered", "Sent", "Queued", "Failed"],
-                "data": [delivered_msgs, sent_msgs, queued_msgs, failed_msgs],
+                "labels": ["Delivered", "Sent", "Queued", "Failed", "Pending Approval"],
+                "data": [delivered_msgs, sent_msgs, queued_msgs, failed_msgs, pending_approval],
             },
-            "carriers": carriers,
         },
-        "recent_activities": activities,
+        "mno_breakdown": mno_breakdown,
+        "kill_switch": get_kill_switch_status(),
+        "timeseries": {
+            "labels": timeseries_labels,
+            "sent": timeseries_sent,
+            "delivered": timeseries_delivered,
+            "failed": timeseries_failed,
+            "received": timeseries_received,
+        },
+        "recent_activity": recent_logs,
+        "system_info": {
+            "os": f"{platform.system()} {platform.release()}",
+            "python": platform.python_version(),
+            "server_time": now.isoformat(),
+        },
     }
 
 
 # -------------------------------------------------------------
-# 2. API Key Management
+# 2. Per-SMS Inline Modification & Batch Actions
 # -------------------------------------------------------------
-@router.get("/api-keys")
-def list_admin_api_keys(
+@router.patch("/messages/{message_id}/modify", response_model=MessageResponse)
+def modify_single_message(
+    message_id: str,
+    payload: MessageModifyRequest,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """Lists all created client API keys with masked token secrets."""
-    keys = db.scalars(select(ApiKey).order_by(desc(ApiKey.created_at))).all()
+    """Allows Super Admin or Tenant Admin to edit an unsent message before radio dispatch."""
+    admin_id = admin.get("user_id") or admin.get("sub", "admin")
+    try:
+        return modify_message(db, message_id, payload, admin_id=admin_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Message '{message_id}' not found")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/messages/batch-action", response_model=BatchActionResponse)
+def execute_batch_action(
+    payload: BatchActionRequest,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Approve, reject (with refund), cancel, or force reroute quarantined/queued messages."""
+    admin_id = admin.get("user_id") or admin.get("sub", "admin")
+    return batch_action_messages(db, payload, admin_id=admin_id)
+
+
+# -------------------------------------------------------------
+# 3. Emergency Kill-Switch Endpoint
+# -------------------------------------------------------------
+@router.post("/system/kill-switch", response_model=KillSwitchResponse)
+def toggle_system_kill_switch(
+    payload: KillSwitchRequest,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Halts all outbound job leasing immediately without dropping incoming webhooks."""
+    res = set_kill_switch(payload.enabled, tenant_id=payload.tenant_id)
+    scope = f"tenant {payload.tenant_id}" if payload.tenant_id else "global system"
+    state_str = "PAUSED" if payload.enabled else "RESUMED"
+    return KillSwitchResponse(
+        global_paused=res["global_paused"],
+        paused_tenants=res["paused_tenants"],
+        message=f"Outbound SMS leasing {state_str} for {scope}. {payload.reason or ''}",
+    )
+
+
+@router.get("/system/kill-switch", response_model=KillSwitchResponse)
+def get_kill_switch(admin: Dict[str, Any] = Depends(get_current_admin)):
+    res = get_kill_switch_status()
+    return KillSwitchResponse(
+        global_paused=res["global_paused"],
+        paused_tenants=res["paused_tenants"],
+        message="Kill switch state retrieved",
+    )
+
+
+# -------------------------------------------------------------
+# 4. Multi-Tenant Organization Management (Super Admin)
+# -------------------------------------------------------------
+@router.get("/tenants", response_model=List[TenantResponse])
+def list_tenants(
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Lists all tenants (Organizations)."""
+    return db.scalars(select(Tenant).order_by(Tenant.created_at.desc())).all()
+
+
+@router.post("/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
+def create_tenant(
+    payload: TenantCreate,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Creates a new tenant organization."""
+    existing = db.scalar(select(Tenant).where(Tenant.slug == payload.slug.strip().lower()))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Tenant slug '{payload.slug}' already exists.")
+
+    tenant = Tenant(
+        name=payload.name.strip(),
+        slug=payload.slug.strip().lower(),
+        can_use_shared_devices=payload.can_use_shared_devices,
+        require_bulk_approval_threshold=payload.require_bulk_approval_threshold,
+        allowed_sender_names=payload.allowed_sender_names,
+        daily_sms_limit=payload.daily_sms_limit,
+    )
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@router.get("/tenants/{tenant_id}", response_model=TenantResponse)
+def get_tenant(
+    tenant_id: str,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    t = db.get(Tenant, tenant_id)
+    if not t:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return t
+
+
+# -------------------------------------------------------------
+# 5. User Management Console
+# -------------------------------------------------------------
+@router.get("/users", response_model=List[UserResponse])
+def list_users(
+    tenant_id: Optional[str] = None,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Lists users, optionally filtered by tenant."""
+    query = select(User)
+    if tenant_id:
+        query = query.where(User.tenant_id == tenant_id)
+    return db.scalars(query.order_by(desc(User.created_at))).all()
+
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(
+    payload: UserCreate,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Creates a new user under a tenant organization."""
+    existing = db.scalar(select(User).where(User.email == payload.email.strip().lower()))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Email '{payload.email}' already registered.")
+
+    user = User(
+        email=payload.email.strip().lower(),
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name.strip(),
+        role=payload.role,
+        tenant_id=payload.tenant_id,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+# -------------------------------------------------------------
+# 6. Credit Ledger & Audit History
+# -------------------------------------------------------------
+@router.get("/credit-transactions")
+def get_credit_ledger(
+    tenant_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Retrieves immutable credit ledger records."""
+    effective_tenant_id = admin.get("tenant_id") or tenant_id
+    txs = list_credit_transactions(db, tenant_id=effective_tenant_id, limit=limit, offset=offset)
+    return [
+        {
+            "id": tx.id,
+            "tenant_id": tx.tenant_id,
+            "bundle_id": tx.bundle_id,
+            "message_id": tx.message_id,
+            "tx_type": tx.tx_type,
+            "amount": tx.amount,
+            "balance_after": tx.balance_after,
+            "reason": tx.reason,
+            "created_at": tx.created_at.isoformat(),
+        }
+        for tx in txs
+    ]
+
+
+# -------------------------------------------------------------
+# 7. TCRA DND Blacklist Management
+# -------------------------------------------------------------
+@router.get("/dnd", response_model=List[DndBlacklistResponse])
+def list_dnd_blacklist(
+    tenant_id: Optional[str] = None,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Lists DND opt-out records."""
+    effective_tenant_id = admin.get("tenant_id") or tenant_id
+    query = select(DndBlacklist)
+    if effective_tenant_id:
+        query = query.where(or_(DndBlacklist.tenant_id == effective_tenant_id, DndBlacklist.tenant_id == None))
+    return db.scalars(query.order_by(desc(DndBlacklist.created_at))).all()
+
+
+@router.post("/dnd", response_model=DndBlacklistResponse, status_code=status.HTTP_201_CREATED)
+def add_dnd_blacklist(
+    payload: DndBlacklistCreate,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Manually blocks a phone number from receiving promotional SMS."""
+    from app.utils.phone_tz import normalize_tz_phone
+    norm = normalize_tz_phone(payload.phone_number)
+    entry = DndBlacklist(
+        phone_number=norm,
+        reason=payload.reason,
+        tenant_id=payload.tenant_id or admin.get("tenant_id"),
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.delete("/dnd/{dnd_id}")
+def remove_dnd_blacklist(
+    dnd_id: str,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    entry = db.get(DndBlacklist, dnd_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DND entry not found")
+    db.delete(entry)
+    db.commit()
+    return {"status": "success", "message": "Phone number removed from DND blacklist"}
+
+
+# -------------------------------------------------------------
+# 8. Content Moderation Firewall Rules
+# -------------------------------------------------------------
+@router.get("/moderation-rules", response_model=List[ModerationRuleResponse])
+def list_moderation_rules(
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Lists regex content moderation rules."""
+    return db.scalars(select(ContentModerationRule).order_by(desc(ContentModerationRule.created_at))).all()
+
+
+@router.post("/moderation-rules", response_model=ModerationRuleResponse, status_code=status.HTTP_201_CREATED)
+def create_moderation_rule(
+    payload: ModerationRuleCreate,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Creates a new regex content firewall rule."""
+    rule = ContentModerationRule(
+        name=payload.name.strip(),
+        pattern=payload.pattern.strip(),
+        action=payload.action,
+        replacement_text=payload.replacement_text,
+        is_active=payload.is_active,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.delete("/moderation-rules/{rule_id}")
+def delete_moderation_rule(
+    rule_id: str,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    rule = db.get(ContentModerationRule, rule_id)
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    db.delete(rule)
+    db.commit()
+    return {"status": "success", "message": f"Rule '{rule.name}' deleted"}
+
+
+# -------------------------------------------------------------
+# 9. SMS Bundle & Top-up Management
+# -------------------------------------------------------------
+@router.get("/bundle")
+def get_bundle_status(
+    tenant_id: Optional[str] = None,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Retrieves current SMS bundle status and credit balance."""
+    effective_tenant_id = admin.get("tenant_id") or tenant_id
+    return get_bundle_summary(db, tenant_id=effective_tenant_id)
+
+
+@router.post("/bundle/topup")
+def topup_sms_bundle(
+    payload: BundleTopupRequest,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Adds SMS credits to the active bundle and extends expiration."""
+    effective_tenant_id = payload.tenant_id or admin.get("tenant_id")
+    bundle = topup_bundle(
+        db,
+        credits_to_add=payload.credits,
+        extend_days=payload.extend_days,
+        plan_name=payload.plan_name,
+        tenant_id=effective_tenant_id,
+    )
+    return get_bundle_summary(db, tenant_id=effective_tenant_id)
+
+
+# -------------------------------------------------------------
+# 10. API Key Management
+# -------------------------------------------------------------
+@router.get("/api-keys")
+def list_api_keys(
+    tenant_id: Optional[str] = None,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    effective_tenant_id = admin.get("tenant_id") or tenant_id
+    query = select(ApiKey)
+    if effective_tenant_id:
+        query = query.where(ApiKey.tenant_id == effective_tenant_id)
+    keys = db.scalars(query.order_by(desc(ApiKey.created_at))).all()
     return [
         {
             "id": k.id,
             "name": k.name,
             "key_prefix": k.key_prefix,
             "scopes": k.scopes,
-            "is_active": k.is_active,
             "rate_limit": k.rate_limit,
-            "created_at": k.created_at.isoformat() if k.created_at else None,
+            "allowed_ips": k.allowed_ips,
+            "is_active": k.is_active,
+            "created_at": k.created_at.isoformat(),
             "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
             "expires_at": k.expires_at.isoformat() if k.expires_at else None,
         }
@@ -237,198 +603,115 @@ def list_admin_api_keys(
 
 
 @router.post("/api-keys", status_code=status.HTTP_201_CREATED)
-def create_admin_api_key(
+def create_api_key_admin(
     payload: ApiKeyCreateAdmin,
-    request: Request,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Creates a new client API key and returns the full secret token ONCE.
-    """
-    raw_key, prefix, key_hash = generate_api_key(prefix="sms_live_")
+    raw_key, prefix, key_hash = generate_api_key(prefix="gw_")
     expires_at = None
     if payload.expires_in_days:
         expires_at = datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)
 
+    effective_tenant_id = payload.tenant_id or admin.get("tenant_id")
+
     api_key = ApiKey(
-        name=payload.name.strip(),
+        tenant_id=effective_tenant_id,
+        name=payload.name,
         key_hash=key_hash,
         key_prefix=prefix,
         scopes=payload.scopes,
         rate_limit=payload.rate_limit,
+        allowed_ips=payload.allowed_ips,
         expires_at=expires_at,
+        is_active=True,
     )
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
 
-    client_ip = request.client.host if request.client else None
-    record_audit_event(
-        db,
-        action="api_key.create",
-        actor_type="admin",
-        actor_id=admin.get("sub", "admin"),
-        details={"name": api_key.name, "prefix": prefix, "scopes": api_key.scopes},
-        ip_address=client_ip,
-    )
-
     return {
         "id": api_key.id,
         "name": api_key.name,
+        "key_prefix": api_key.key_prefix,
         "raw_key": raw_key,
-        "key_prefix": prefix,
         "scopes": api_key.scopes,
         "rate_limit": api_key.rate_limit,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-        "created_at": api_key.created_at.isoformat(),
-        "message": "Copy this API key now! It will not be shown again.",
+        "allowed_ips": api_key.allowed_ips,
+        "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
     }
 
 
 @router.delete("/api-keys/{key_id}")
-def revoke_admin_api_key(
+def revoke_api_key(
     key_id: str,
-    request: Request,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """Revokes an API key."""
-    key = db.get(ApiKey, key_id)
-    if not key:
+    api_key = db.get(ApiKey, key_id)
+    if not api_key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
-    key.is_active = False
+    api_key.is_active = False
     db.commit()
-
-    client_ip = request.client.host if request.client else None
-    record_audit_event(
-        db,
-        action="api_key.revoke",
-        actor_type="admin",
-        actor_id=admin.get("sub", "admin"),
-        details={"key_id": key_id, "name": key.name},
-        ip_address=client_ip,
-    )
-    return {"status": "success", "message": f"API key '{key.name}' deactivated."}
+    return {"status": "success", "message": f"API key '{api_key.name}' revoked."}
 
 
 # -------------------------------------------------------------
-# 3. Device Management & Pairing Code Generation
+# 11. Device Pairing Code Generation
 # -------------------------------------------------------------
+@router.post("/devices/generate-pairing-code")
 @router.post("/devices/pairing-code")
-def generate_device_pairing_code(
+def generate_pairing_code_for_phone(
     payload: PairingCodeAdminRequest,
-    request: Request,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """
-    Generates a fresh 8-character pairing code for setting up the Android SMS Gateway mobile app.
-    """
-    pairing = create_pairing_code(
+    effective_tenant_id = payload.tenant_id or admin.get("tenant_id")
+    pairing_code = create_pairing_code(
         db,
         device_name=payload.device_name,
         expires_in_seconds=payload.expires_in_seconds,
-    )
-    client_ip = request.client.host if request.client else None
-    record_audit_event(
-        db,
-        action="device.pairing_code.create",
-        actor_type="admin",
-        actor_id=admin.get("sub", "admin"),
-        details={"code": pairing.code, "device_name": pairing.device_name},
-        ip_address=client_ip,
+        tenant_id=effective_tenant_id,
     )
     return {
-        "code": pairing.code,
-        "device_name": pairing.device_name,
-        "expires_at": pairing.expires_at.isoformat(),
+        "code": pairing_code.code,
+        "device_name": pairing_code.device_name,
+        "expires_at": pairing_code.expires_at.isoformat(),
         "expires_in_seconds": payload.expires_in_seconds,
     }
 
 
-@router.post("/devices/{device_id}/ping")
-def ping_device(
-    device_id: str,
+# -------------------------------------------------------------
+# 12. Webhook Testing Dispatch
+# -------------------------------------------------------------
+@router.post("/webhooks/{subscription_id}/test")
+def test_webhook_delivery(
+    subscription_id: str,
     admin: Dict[str, Any] = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """Checks device status and last heartbeat timestamp."""
-    device = db.get(GatewayDevice, device_id)
-    if not device:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-    return {
-        "device_id": device.id,
-        "name": device.name,
-        "is_online": device.is_online,
-        "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
-        "battery_level": device.battery_level,
-        "signal_level": device.signal_level,
-        "carrier_name": device.carrier_name,
-    }
-
-
-# -------------------------------------------------------------
-# 4. Webhook Test Ping
-# -------------------------------------------------------------
-@router.post("/webhooks/{webhook_id}/test")
-def test_webhook_endpoint(
-    webhook_id: str,
-    admin: Dict[str, Any] = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """Sends an immediate test ping event to the specified webhook subscription."""
-    sub = db.get(WebhookSubscription, webhook_id)
+    sub = db.get(WebhookSubscription, subscription_id)
     if not sub:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook subscription not found")
 
-    deliveries = queue_event(
+    test_deliveries = queue_event(
         db,
         event_type="test.ping",
         data={
-            "message": "Test ping from SIM SMS Gateway Admin Dashboard",
+            "ping": "pong",
+            "message": "Manual webhook test triggered from mission control",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "admin": admin.get("sub", "admin"),
         },
+        tenant_id=sub.tenant_id,
     )
-    # Deliver synchronously for immediate test feedback
-    if deliveries:
-        delivery = deliveries[0]
-        success = deliver_webhook_sync(db, delivery)
-        return {
-            "status": "delivered" if success else "failed",
-            "http_status": delivery.response_status_code,
-            "error": delivery.error_message,
-            "response_body": delivery.response_body[:200] if delivery.response_body else None,
-        }
-    return {"status": "queued"}
+    target_delivery = next((d for d in test_deliveries if d.subscription_id == sub.id), None)
+    if not target_delivery:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not queue test delivery")
 
-
-# -------------------------------------------------------------
-# 5. System Health & Environment Info
-# -------------------------------------------------------------
-@router.get("/system")
-def get_system_diagnostics(
-    admin: Dict[str, Any] = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """Returns runtime diagnostic information about the server and database."""
-    db_ok = True
-    try:
-        db.execute(select(1))
-    except Exception:
-        db_ok = False
-
+    result = deliver_webhook_sync(db, target_delivery)
     return {
-        "project_name": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "environment": settings.ENVIRONMENT,
-        "python_version": sys.version.split(" ")[0],
-        "platform": platform.platform(),
-        "database_status": "connected" if db_ok else "error",
-        "database_url_masked": settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else "sqlite",
-        "rate_limit_per_minute": settings.RATE_LIMIT_PER_MINUTE,
-        "job_lease_timeout_seconds": settings.JOB_LEASE_TIMEOUT_SECONDS,
-        "device_offline_threshold_seconds": settings.DEVICE_OFFLINE_THRESHOLD_SECONDS,
-        "server_time_utc": datetime.now(timezone.utc).isoformat(),
+        "delivery_id": result.id,
+        "status": result.status,
+        "response_code": result.response_status_code,
+        "error": result.error_message,
     }

@@ -11,9 +11,12 @@ from app.schemas.message import (
     MessageResponse,
     MessageEventResponse,
     MessageFilterParams,
+    BulkMessageCreate,
+    BulkMessageResponse,
 )
 from app.services.message_service import (
     create_message,
+    create_bulk_messages,
     retry_message,
     list_messages,
 )
@@ -36,11 +39,39 @@ def submit_message(
     client_ip = request.client.host if request.client else None
     try:
         message, is_duplicate = create_message(
-            db, payload, actor_id=api_key.id, ip_address=client_ip
+            db,
+            payload,
+            actor_id=api_key.id,
+            ip_address=client_ip,
+            tenant_id=api_key.tenant_id,
         )
         if is_duplicate:
             response.status_code = status.HTTP_200_OK
         return message
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/bulk", response_model=BulkMessageResponse, status_code=status.HTTP_201_CREATED)
+def submit_bulk_messages(
+    payload: BulkMessageCreate,
+    request: Request,
+    api_key: ApiKey = Depends(require_scope("sms:send")),
+    db: Session = Depends(get_db),
+):
+    """
+    Submits a batch of SMS messages to multiple recipients with automated deduplication,
+    normalization, anti-spam protection throttling, and TCRA quiet hours.
+    """
+    client_ip = request.client.host if request.client else None
+    try:
+        return create_bulk_messages(
+            db,
+            payload,
+            actor_id=api_key.id,
+            ip_address=client_ip,
+            tenant_id=api_key.tenant_id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -55,7 +86,13 @@ def get_messages(
     db: Session = Depends(get_db),
 ):
     """Lists messages with optional status and recipient filters."""
-    params = MessageFilterParams(status=status_filter, to=to, limit=limit, offset=offset)
+    params = MessageFilterParams(
+        status=status_filter,
+        to=to,
+        tenant_id=api_key.tenant_id,
+        limit=limit,
+        offset=offset,
+    )
     messages, _ = list_messages(db, params)
     return messages
 
@@ -73,6 +110,11 @@ def get_message(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Message '{message_id}' not found",
         )
+    if api_key.tenant_id and message.tenant_id and message.tenant_id != api_key.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Message '{message_id}' not found",
+        )
     return message
 
 
@@ -85,6 +127,11 @@ def get_message_events(
     """Retrieves full audit event history for a message."""
     message = db.get(Message, message_id)
     if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Message '{message_id}' not found",
+        )
+    if api_key.tenant_id and message.tenant_id and message.tenant_id != api_key.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Message '{message_id}' not found",

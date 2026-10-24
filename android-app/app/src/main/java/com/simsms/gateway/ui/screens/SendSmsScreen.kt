@@ -31,6 +31,7 @@ fun SendSmsScreen(
     var countryCode by remember { mutableStateOf("+255") }
     var phoneNumber by remember { mutableStateOf("") }
     var messageText by remember { mutableStateOf("") }
+    var selectedSimSlot by remember { mutableStateOf<Int?>(null) }
     var showConfirmDialog by remember { mutableStateOf(false) }
 
     val isSending by viewModel.isSendingSms.collectAsState()
@@ -93,7 +94,7 @@ fun SendSmsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // SIM Banner
+            // SIM Banner & Selector
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
@@ -101,25 +102,47 @@ fun SendSmsScreen(
                     containerColor = if (viewModel.isSimReady) StatusGreenLight else StatusOrangeLight
                 )
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SimCard,
-                        contentDescription = null,
-                        tint = if (viewModel.isSimReady) StatusGreen else StatusOrange
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (viewModel.isSimReady)
-                            "Sending via: ${viewModel.simCarrierName ?: "Active SIM"} (Slot 1)"
-                        else
-                            "Warning: Physical SIM not detected or not ready",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (viewModel.isSimReady) StatusGreen else StatusOrange
-                    )
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.SimCard,
+                            contentDescription = null,
+                            tint = if (viewModel.isSimReady) StatusGreen else StatusOrange
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = if (viewModel.isSimReady)
+                                "Network: ${viewModel.simCarrierName ?: "Cellular Active"}"
+                            else
+                                "Warning: Physical SIM not detected or not ready",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (viewModel.isSimReady) StatusGreen else StatusOrange
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // SIM Slot Selector
+                    Text("Select Outgoing SIM Line:", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = selectedSimSlot == null,
+                            onClick = { selectedSimSlot = null },
+                            label = { Text("Auto (Default)", fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = selectedSimSlot == 1,
+                            onClick = { selectedSimSlot = 1 },
+                            label = { Text("SIM Slot 1", fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = selectedSimSlot == 2,
+                            onClick = { selectedSimSlot = 2 },
+                            label = { Text("SIM Slot 2", fontSize = 11.sp) }
+                        )
+                    }
                 }
             }
 
@@ -251,7 +274,7 @@ fun SendSmsScreen(
             confirmText = "Send Now",
             onConfirm = {
                 showConfirmDialog = false
-                viewModel.sendManualSms(fullDestination, messageText)
+                viewModel.sendManualSms(fullDestination, messageText, selectedSimSlot)
             },
             onDismiss = { showConfirmDialog = false }
         )

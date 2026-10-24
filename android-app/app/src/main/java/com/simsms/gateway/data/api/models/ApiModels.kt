@@ -17,13 +17,25 @@ data class DevicePairResponse(
     @SerializedName("message") val message: String
 )
 
+data class SimSlotTelemetry(
+    @SerializedName("slot") val slot: Int,
+    @SerializedName("carrier") val carrier: String? = null,
+    @SerializedName("number") val number: String? = null,
+    @SerializedName("daily_sent") val dailySent: Int = 0,
+    @SerializedName("limit") val limit: Int = 500,
+    @SerializedName("signal_dbm") val signalDbm: Int? = null,
+    @SerializedName("is_active") val isActive: Boolean = true
+)
+
 data class DeviceHeartbeatRequest(
     @SerializedName("sim_ready") val simReady: Boolean,
     @SerializedName("phone_number") val phoneNumber: String?,
     @SerializedName("carrier_name") val carrierName: String?,
     @SerializedName("network_type") val networkType: String?,
     @SerializedName("signal_level") val signalLevel: Int?,
-    @SerializedName("battery_level") val batteryLevel: Int?
+    @SerializedName("battery_level") val batteryLevel: Int?,
+    @SerializedName("battery_temperature") val batteryTemperature: Float? = null,
+    @SerializedName("sim_slots") val simSlots: List<SimSlotTelemetry>? = null
 )
 
 data class GatewayDeviceResponse(
@@ -42,6 +54,7 @@ data class DeviceJobResponse(
     @SerializedName("body") val body: String,
     @SerializedName("lease_token") val leaseToken: String,
     @SerializedName("parts_count") val partsCount: Int,
+    @SerializedName("sim_slot") val simSlot: Int? = null,
     @SerializedName("created_at") val createdAt: String
 )
 

@@ -18,8 +18,8 @@ from app.models.webhook import WebhookSubscription, WebhookDelivery
 
 def validate_webhook_url(url: str, allow_local: bool = False) -> None:
     """
-    Validates webhook URL structure and enforces SSRF restrictions.
-    Rejects private, loopback, multicast, and link-local addresses unless allow_local is True.
+    Validates webhook URL structure and enforces strict SSRF restrictions.
+    Rejects private, loopback, multicast, link-local, and cloud metadata addresses unless allow_local is True.
     """
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -43,15 +43,22 @@ def validate_webhook_url(url: str, allow_local: bool = False) -> None:
                     or ip_obj.is_link_local
                     or ip_obj.is_multicast
                     or ip_obj.is_reserved
+                    or ip_str == "169.254.169.254"
                 ):
                     raise ValueError(f"Webhook destination resolves to a forbidden IP address: {ip_str}")
         except socket.gaierror:
             raise ValueError(f"Cannot resolve webhook host: '{parsed.hostname}'")
 
 
-def queue_event(db: Session, event_type: str, data: Dict[str, Any]) -> List[WebhookDelivery]:
+def queue_event(
+    db: Session,
+    event_type: str,
+    data: Dict[str, Any],
+    tenant_id: Optional[str] = None,
+) -> List[WebhookDelivery]:
     """
-    Finds all active subscriptions listening to event_type, creates WebhookDelivery records.
+    Finds all active subscriptions listening to event_type (scoped to tenant or global),
+    creates WebhookDelivery records.
     """
     event_id = str(uuid.uuid4())
     event_payload = {
@@ -61,10 +68,16 @@ def queue_event(db: Session, event_type: str, data: Dict[str, Any]) -> List[Webh
         "data": data,
     }
 
-    # Fetch active subscriptions
-    subscriptions = db.scalars(
-        select(WebhookSubscription).where(WebhookSubscription.is_active == True)
-    ).all()
+    query = select(WebhookSubscription).where(WebhookSubscription.is_active == True)
+    if tenant_id:
+        query = query.where(
+            or_(
+                WebhookSubscription.tenant_id == tenant_id,
+                WebhookSubscription.tenant_id == None,
+            )
+        )
+
+    subscriptions = db.scalars(query).all()
 
     deliveries = []
     for sub in subscriptions:
@@ -94,6 +107,7 @@ def deliver_webhook_sync(
 ) -> WebhookDelivery:
     """
     Performs delivery attempt of a single WebhookDelivery record.
+    Enforces follow_redirects=False to mitigate SSRF DNS-rebinding or redirect pivoting.
     """
     sub = delivery.subscription
     if not sub or not sub.is_active:
@@ -114,11 +128,12 @@ def deliver_webhook_sync(
         "X-Event-Type": delivery.event_type,
         "X-Timestamp": timestamp_str,
         "X-Signature-SHA256": signature,
+        "X-Gateway-Signature": f"sha256={signature}",
     }
 
     should_close_client = False
     if client is None:
-        client = httpx.Client(timeout=settings.WEBHOOK_TIMEOUT_SECONDS)
+        client = httpx.Client(timeout=settings.WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False)
         should_close_client = True
 
     try:
@@ -151,25 +166,10 @@ def deliver_webhook_sync(
     return delivery
 
 
-def _handle_delivery_failure(delivery: WebhookDelivery, error_msg: str) -> None:
-    delivery.error_message = error_msg
-    logger.warning(
-        f"Webhook [{delivery.id}] delivery attempt {delivery.attempts} failed: {error_msg}"
-    )
-
-    if delivery.attempts >= settings.WEBHOOK_MAX_RETRIES:
-        delivery.status = "failed"
-        delivery.next_retry_at = None
-    else:
-        # Exponential backoff with jitter
-        delay = min(3600, (2 ** delivery.attempts) * 5 + random.uniform(0.5, 3.0))
-        delivery.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
-
-
-def process_pending_webhooks(db: Session, limit: int = 20) -> int:
-    """Processes pending webhook deliveries eligible for retry."""
+def process_pending_webhooks(db: Session, limit: int = 25) -> int:
+    """Processes overdue or pending webhook deliveries."""
     now = datetime.now(timezone.utc)
-    stmt = (
+    deliveries = db.scalars(
         select(WebhookDelivery)
         .where(
             and_(
@@ -181,12 +181,39 @@ def process_pending_webhooks(db: Session, limit: int = 20) -> int:
             )
         )
         .limit(limit)
-    )
-    deliveries = db.scalars(stmt).all()
-    count = 0
-    if deliveries:
-        with httpx.Client(timeout=settings.WEBHOOK_TIMEOUT_SECONDS) as client:
-            for delivery in deliveries:
+    ).all()
+
+    if not deliveries:
+        return 0
+
+    with httpx.Client(timeout=settings.WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        for delivery in deliveries:
+            try:
                 deliver_webhook_sync(db, delivery, client=client)
-                count += 1
-    return count
+            except Exception as e:
+                logger.error(f"Error delivering webhook {delivery.id}: {e}")
+
+    return len(deliveries)
+
+
+def _handle_delivery_failure(delivery: WebhookDelivery, error_desc: str) -> None:
+    """Calculates exponential backoff for retrying webhook dispatch."""
+    delivery.error_message = error_desc
+    if delivery.attempts >= settings.WEBHOOK_MAX_RETRIES:
+        delivery.status = "failed"
+        delivery.next_retry_at = None
+        logger.warning(
+            f"Webhook [{delivery.id}] permanently failed after {delivery.attempts} attempts: {error_desc}"
+        )
+    else:
+        # Exponential backoff: base_seconds * (2 ** (attempts - 1)) + jitter
+        base_seconds = 10
+        backoff = base_seconds * (2 ** (delivery.attempts - 1))
+        jitter = random.uniform(0.5, 2.0)
+        delay_seconds = backoff + jitter
+        delivery.next_retry_at = datetime.now(timezone.utc) + timedelta(
+            seconds=delay_seconds
+        )
+        logger.info(
+            f"Webhook [{delivery.id}] attempt {delivery.attempts} failed. Retry in {delay_seconds:.1f}s"
+        )

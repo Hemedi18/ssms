@@ -70,6 +70,10 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_SERVICE_RUNNING, false)
         set(value) = prefs.edit().putBoolean(KEY_SERVICE_RUNNING, value).apply()
 
+    var dailySentCount: Int
+        get() = prefs.getInt(KEY_DAILY_SENT_COUNT, 0)
+        set(value) = prefs.edit().putInt(KEY_DAILY_SENT_COUNT, value).apply()
+
     fun clearCredentials() {
         prefs.edit()
             .remove(KEY_DEVICE_TOKEN)
@@ -88,5 +92,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_NOTIFICATIONS = "notifications_enabled"
         private const val KEY_LAST_SYNC = "last_sync_timestamp"
         private const val KEY_SERVICE_RUNNING = "service_running"
+        private const val KEY_DAILY_SENT_COUNT = "daily_sent_count"
     }
 }

@@ -9,6 +9,7 @@ import android.util.Log
 import com.simsms.gateway.data.api.ApiClient
 import com.simsms.gateway.data.api.GatewayApiService
 import com.simsms.gateway.data.api.models.DeviceHeartbeatRequest
+import com.simsms.gateway.data.api.models.SimSlotTelemetry
 import com.simsms.gateway.data.api.models.DevicePairRequest
 import com.simsms.gateway.data.api.models.DeviceSendResultRequest
 import com.simsms.gateway.data.api.models.IncomingSmsReportRequest
@@ -29,6 +30,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 class GatewayRepository(
     private val context: Context,
@@ -38,6 +41,8 @@ class GatewayRepository(
 ) {
     private val _isConnected = MutableStateFlow(false)
     val isConnected = _isConnected.asStateFlow()
+
+    private val partsTracker = ConcurrentHashMap<String, MutableSet<Int>>()
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError = _lastError.asStateFlow()
@@ -143,13 +148,26 @@ class GatewayRepository(
         val token = securePrefs.deviceToken ?: return@withContext false
         try {
             val batteryLevel = getBatteryLevel()
+            val slotsTelemetry = smsManager.getAvailableSimSlots().map { slot ->
+                SimSlotTelemetry(
+                    slot = slot.slotIndex,
+                    carrier = slot.carrierName,
+                    number = slot.number,
+                    dailySent = securePrefs.dailySentCount,
+                    limit = 500,
+                    signalDbm = -75,
+                    isActive = true
+                )
+            }
             val request = DeviceHeartbeatRequest(
                 simReady = smsManager.isSimReady(),
                 phoneNumber = smsManager.getSimPhoneNumber(),
                 carrierName = smsManager.getSimCarrierName(),
                 networkType = "Cellular",
                 signalLevel = 4,
-                batteryLevel = batteryLevel
+                batteryLevel = batteryLevel,
+                batteryTemperature = 28.5f,
+                simSlots = if (slotsTelemetry.isNotEmpty()) slotsTelemetry else null
             )
             val response = apiService.sendHeartbeat("Bearer $token", request)
             if (response.isSuccessful) {
@@ -201,11 +219,14 @@ class GatewayRepository(
             )
             database.messageDao().insert(localMessage)
 
+            val subId = if (job.simSlot != null) smsManager.getSubscriptionIdForSlot(job.simSlot) else null
+
             // 2. Dispatch via physical SMS Manager
             val sendResult = smsManager.sendSms(
                 messageId = job.jobId,
                 destinationAddress = job.to,
-                text = job.body
+                text = job.body,
+                subscriptionId = subId
             )
 
             if (sendResult.isFailure) {
@@ -239,8 +260,12 @@ class GatewayRepository(
     }
 
     suspend fun onSmsPartSent(messageId: String, partIndex: Int, totalParts: Int) {
-        // If all parts sent, mark sent in Room and report to backend
-        if (partIndex >= totalParts - 1) {
+        val parts = partsTracker.computeIfAbsent(messageId) { Collections.synchronizedSet(mutableSetOf()) }
+        parts.add(partIndex)
+
+        // Mark sent only when all parts (from 0 to totalParts - 1) have succeeded
+        if (parts.size >= totalParts) {
+            partsTracker.remove(messageId)
             database.messageDao().markSent(messageId)
             logEvent("Sent", "Message $messageId sent successfully ($totalParts parts).")
             reportSendResult(messageId, "sent")
@@ -320,7 +345,7 @@ class GatewayRepository(
         }
     }
 
-    suspend fun sendManualSms(destination: String, text: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun sendManualSms(destination: String, text: String, simSlot: Int? = null): Result<String> = withContext(Dispatchers.IO) {
         val msgId = UUID.randomUUID().toString()
         val localMessage = LocalMessage(
             id = msgId,
@@ -330,9 +355,10 @@ class GatewayRepository(
             createdAt = System.currentTimeMillis()
         )
         database.messageDao().insert(localMessage)
-        logEvent("Sent", "Manual SMS initiated to $destination")
+        logEvent("Sent", "Manual SMS initiated to $destination (SIM Slot: ${simSlot ?: "Default"})")
 
-        val sendRes = smsManager.sendSms(msgId, destination, text)
+        val subId = if (simSlot != null) smsManager.getSubscriptionIdForSlot(simSlot) else null
+        val sendRes = smsManager.sendSms(msgId, destination, text, subscriptionId = subId)
         if (sendRes.isSuccess) {
             Result.success(msgId)
         } else {

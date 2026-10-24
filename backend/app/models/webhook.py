@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional, List, Dict
 from sqlalchemy import String, Boolean, Integer, Text, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -11,6 +12,8 @@ class WebhookSubscription(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
+
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     secret: Mapped[str] = mapped_column(String(64), nullable=False)
     events: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
@@ -26,7 +29,7 @@ class WebhookSubscription(Base):
         nullable=False,
     )
 
-    deliveries: Mapped[list["WebhookDelivery"]] = relationship(
+    deliveries: Mapped[List["WebhookDelivery"]] = relationship(
         "WebhookDelivery", back_populates="subscription", cascade="all, delete-orphan", order_by="desc(WebhookDelivery.created_at)"
     )
 
@@ -47,12 +50,12 @@ class WebhookDelivery(Base):
     # Status: 'pending', 'delivered', 'failed'
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    response_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True, nullable=False
     )
