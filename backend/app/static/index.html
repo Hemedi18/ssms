@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIM SMS Gateway — Mission Control Portal</title>
+  <meta name="description" content="Production-grade cellular SIM SMS Gateway administration dashboard. Real-time Android device monitoring, SMS queue dispatching, webhook delivery, and API management.">
+  
+  <!-- Modern Typography from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js for High Performance Visualisation -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Core Dashboard CSS Design System -->
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       1. AUTH / LOGIN VIEW (Visible if unauthenticated)
+       ======================================================================== -->
+  <div id="auth-view" class="login-wrapper">
+    <div class="login-card">
+      <div class="brand-badge">
+        <span class="status-dot"></span>
+        <span>PRODUCTION SMS GATEWAY</span>
+      </div>
+      <div class="brand-header">
+        <h1>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-cyan);">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          SIM SMS Gateway
+        </h1>
+        <p>Enter your administrator credentials to access the realtime mission control portal.</p>
+      </div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-username">Administrator Username</label>
+          <div class="input-container">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <input type="text" id="login-username" placeholder="admin" value="admin" required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <div class="input-container">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" id="toggle-password-btn" class="password-toggle-btn" title="Show/Hide Password">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" id="login-submit-btn" class="btn-primary" style="margin-top: 10px;">
+          <span>Sign In to Mission Control</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ========================================================================
+       2. DASHBOARD / MISSION CONTROL VIEW (Visible after login)
+       ======================================================================== -->
+  <div id="dashboard-view" class="app-layout" style="display: none;">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="app-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h2>SIM Gateway</h2>
+          <span>Mission Control</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="nav-section-title">Main Menu</span>
+        
+        <a class="nav-item active" data-tab="overview" id="nav-overview">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span>Overview</span>
+        </a>
+
+        <a class="nav-item" data-tab="devices" id="nav-devices">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+          <span>Android Devices</span>
+          <span class="nav-badge" id="nav-badge-devices">0</span>
+        </a>
+
+        <a class="nav-item" data-tab="messages" id="nav-messages">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          <span>Outbound SMS</span>
+          <span class="nav-badge" id="nav-badge-queued">0</span>
+        </a>
+
+        <a class="nav-item" data-tab="inbox" id="nav-inbox">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+          </svg>
+          <span>Inbox / Received</span>
+          <span class="nav-badge" id="nav-badge-inbox">0</span>
+        </a>
+
+        <span class="nav-section-title">Integrations</span>
+
+        <a class="nav-item" data-tab="webhooks" id="nav-webhooks">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span>Webhooks</span>
+        </a>
+
+        <a class="nav-item" data-tab="apikeys" id="nav-apikeys">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+          <span>API Keys</span>
+        </a>
+
+        <a class="nav-item" data-tab="settings" id="nav-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>System & API Docs</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-snippet">
+          <div class="user-avatar">AD</div>
+          <div class="user-info">
+            <div class="user-name">admin</div>
+            <div class="user-role">Super Administrator</div>
+          </div>
+        </div>
+        <button id="logout-btn" class="btn-secondary btn-sm" title="Logout">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      
+      <!-- Top Navigation Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="mobile-menu-btn" class="menu-toggle-btn" title="Toggle Sidebar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+
+          <div class="server-status-pill">
+            <span class="status-dot"></span>
+            <span id="gateway-status-text">GATEWAY ONLINE</span>
+          </div>
+
+          <span class="server-host-tag" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);">
+            sms.edusphere.co.tz
+          </span>
+        </div>
+
+        <div class="topbar-right">
+          <div class="refresh-container">
+            <span id="auto-refresh-label">Live Sync: Active</span>
+            <button id="refresh-now-btn" class="refresh-btn" title="Refresh Data Now">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+            </button>
+          </div>
+
+          <button id="quick-compose-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px; width: auto;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Send SMS</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dynamic Page Container -->
+      <main class="content-container">
+
+        <!-- ==================================================================
+             SECTION 1: OVERVIEW & ANALYTICS DASHBOARD
+             ================================================================== -->
+        <section id="tab-overview" class="page-tab active">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Gateway Overview & Real-Time Telemetry</h2>
+              <p>Real-time delivery rates, cellular device statuses, and live message queues.</p>
+            </div>
+            <div>
+              <button id="overview-pair-device-btn" class="btn-secondary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"></path>
+                </svg>
+                <span>Pair New Android Device</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Top Metrics Cards Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-card-top">
+                <span class="stat-card-title">Total Outbound SMS</span>
+                <div class="stat-icon icon-blue">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-value" id="stat-total-sms">0</div>
+              <div class="stat-subtext">All time processed</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-top">
+                <span class="stat-card-title">Delivery Success Rate</span>
+                <div class="stat-icon icon-green">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-value" id="stat-success-rate">100%</div>
+              <div class="stat-subtext" id="stat-delivered-count">0 delivered</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-top">
+                <span class="stat-card-title">Active Queue</span>
+                <div class="stat-icon icon-amber">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-value" id="stat-queue-count">0</div>
+              <div class="stat-subtext" id="stat-sending-count">0 in transit</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-top">
+                <span class="stat-card-title">Android Devices</span>
+                <div class="stat-icon icon-cyan">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                    <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-value" id="stat-devices-online">0</div>
+              <div class="stat-subtext" id="stat-devices-total">0 devices registered</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-card-top">
+                <span class="stat-card-title">Inbound Received</span>
+                <div class="stat-icon icon-rose">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+                    <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-value" id="stat-inbound-count">0</div>
+              <div class="stat-subtext">Received via SIM</div>
+            </div>
+          </div>
+
+          <!-- Charts Grid (Visualisations) -->
+          <div class="charts-grid">
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>SMS Traffic & Delivery Volume (Hourly)</h3>
+                <span style="font-size: 12px; color: var(--text-dim);">Live 12-Hour Telemetry</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="trafficChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>Delivery Status Breakdown</h3>
+                <span style="font-size: 12px; color: var(--text-dim);">Overall Ratio</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="statusChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Activity Log -->
+          <div class="table-card">
+            <div class="table-header">
+              <h3 style="font-size: 16px; font-weight: 700; color: #fff;">Live Gateway Activity Stream</h3>
+              <span style="font-size: 12px; color: var(--text-dim);">Real-time audit records</span>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="overview-activity-tbody">
+                  <tr>
+                    <td colspan="4" style="text-align: center; padding: 24px;">Listening for live gateway activity...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 2: ANDROID DEVICES MANAGEMENT
+             ================================================================== -->
+        <section id="tab-devices" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Android SIM Gateway Devices</h2>
+              <p>Manage paired Android smartphones, inspect SIM cards, signal levels, and battery health.</p>
+            </div>
+            <button id="devices-generate-code-btn" class="btn-primary" style="width: auto;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Generate Pairing Code</span>
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Device Name & Model</th>
+                    <th>Status</th>
+                    <th>SIM Ready</th>
+                    <th>Carrier & Network</th>
+                    <th>Battery</th>
+                    <th>Signal</th>
+                    <th>Last Heartbeat</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="devices-tbody">
+                  <tr>
+                    <td colspan="8" style="text-align: center; padding: 30px;">Loading devices...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 3: OUTBOUND SMS QUEUE & HISTORY
+             ================================================================== -->
+        <section id="tab-messages" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Outbound SMS Messages</h2>
+              <p>Real-time queue monitoring, delivery statuses, retry triggers, and audit logs.</p>
+            </div>
+            <button id="messages-compose-btn" class="btn-primary" style="width: auto;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              <span>Compose & Send SMS</span>
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-header">
+              <div class="table-search-bar">
+                <input type="text" id="messages-search-input" placeholder="Search by recipient phone (+255...) or ID">
+              </div>
+
+              <div class="filter-pills" id="messages-filter-pills">
+                <span class="filter-pill active" data-status="">All</span>
+                <span class="filter-pill" data-status="queued">Queued</span>
+                <span class="filter-pill" data-status="sending">Sending</span>
+                <span class="filter-pill" data-status="sent">Sent</span>
+                <span class="filter-pill" data-status="delivered">Delivered</span>
+                <span class="filter-pill" data-status="failed">Failed</span>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Message ID</th>
+                    <th>Recipient</th>
+                    <th>Message Body</th>
+                    <th>Status</th>
+                    <th>Device</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="messages-tbody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; padding: 30px;">Loading messages...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 4: INBOX / RECEIVED SMS
+             ================================================================== -->
+        <section id="tab-inbox" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Inbox / Received SMS Messages</h2>
+              <p>Inbound cellular SMS captured by Android gateway devices and synced to server.</p>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sender Phone</th>
+                    <th>Message Body</th>
+                    <th>Received At Device</th>
+                    <th>Gateway Device</th>
+                    <th>Synced At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inbox-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align: center; padding: 30px;">Loading incoming messages...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 5: WEBHOOKS & EVENTS
+             ================================================================== -->
+        <section id="tab-webhooks" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Webhook Subscriptions & Delivery Logs</h2>
+              <p>HMAC-SHA256 signed event notifications dispatched to your external servers.</p>
+            </div>
+            <button id="webhooks-add-btn" class="btn-primary" style="width: auto;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Add Webhook Subscription</span>
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Endpoint URL</th>
+                    <th>Events Subscribed</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="webhooks-tbody">
+                  <tr>
+                    <td colspan="5" style="text-align: center; padding: 30px;">Loading webhooks...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 6: API KEYS & DEVELOPER INTEGRATIONS
+             ================================================================== -->
+        <section id="tab-apikeys" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>Client API Keys & Developer SDKs</h2>
+              <p>Manage application credentials and explore ready-to-copy code snippets for sending SMS.</p>
+            </div>
+            <button id="apikeys-create-btn" class="btn-primary" style="width: auto;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Generate New API Key</span>
+            </button>
+          </div>
+
+          <div class="table-card">
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Prefix</th>
+                    <th>Scopes</th>
+                    <th>Rate Limit</th>
+                    <th>Active</th>
+                    <th>Last Used</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="apikeys-tbody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; padding: 30px;">Loading API keys...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Code Snippets Card -->
+          <div class="table-card">
+            <div class="table-header">
+              <h3 style="color: #fff; font-size: 16px;">Quick Integration Snippets</h3>
+              <span style="font-size: 12px; color: var(--text-dim);">Ready for Python, cURL, PHP & JavaScript</span>
+            </div>
+            <pre style="background: rgba(10, 15, 29, 0.9); padding: 18px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 13px; color: #38bdf8; overflow-x: auto; border: 1px solid var(--border-subtle);">
+# Python Example
+import requests
+
+url = "https://sms.edusphere.co.tz/api/v1/messages"
+headers = {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+payload = {
+    "to": "+255712345678",
+    "body": "Hello from SIM SMS Gateway! Your verification code is 849201."
+}
+
+response = requests.post(url, json=payload, headers=headers)
+print(response.json())
+            </pre>
+          </div>
+        </section>
+
+
+        <!-- ==================================================================
+             SECTION 7: SYSTEM DIAGNOSTICS & SETTINGS
+             ================================================================== -->
+        <section id="tab-settings" class="page-tab" style="display: none;">
+          <div class="page-header">
+            <div class="page-title">
+              <h2>System Diagnostics & Administration</h2>
+              <p>Server architecture, LiteSpeed proxy uptime, database engine, and API links.</p>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-card-title">Server Host</span>
+              <div class="stat-value" style="font-size: 18px; margin-top: 6px;">sms.edusphere.co.tz</div>
+              <div class="stat-subtext">Reverse Proxy: LiteSpeed</div>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-card-title">Python Version</span>
+              <div class="stat-value" id="sys-python-ver" style="font-size: 20px; margin-top: 6px;">Python 3.11</div>
+              <div class="stat-subtext">Engine: Uvicorn ASGI</div>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-card-title">Database Status</span>
+              <div class="stat-value" id="sys-db-status" style="font-size: 20px; color: var(--color-emerald); margin-top: 6px;">CONNECTED</div>
+              <div class="stat-subtext">SQLite / SQLAlchemy ORM</div>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-card-title">OpenAPI Documentation</span>
+              <div style="margin-top: 10px;">
+                <a href="/docs" target="_blank" class="btn-secondary btn-sm" style="text-decoration: none;">
+                  <span>Open Swagger UI</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+
+  <!-- ========================================================================
+       MODALS
+       ======================================================================== -->
+
+  <!-- Modal: Compose & Send SMS -->
+  <div id="modal-compose-sms" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Compose & Dispatch Outbound SMS</h3>
+        <button class="modal-close-btn" data-close="modal-compose-sms">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <form id="compose-sms-form">
+        <div class="form-group">
+          <label for="compose-recipient">Recipient Phone Number</label>
+          <div class="input-container">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            </svg>
+            <input type="tel" id="compose-recipient" placeholder="+255712345678 or 0712345678" required style="font-family: var(--font-mono);">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="compose-body">SMS Content</label>
+          <div class="input-container">
+            <textarea id="compose-body" rows="4" placeholder="Enter SMS message text here..." required style="padding-left: 14px;"></textarea>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-top: 6px;">
+            <span id="char-counter">0 / 160 characters</span>
+            <span id="segment-counter">1 SMS segment (GSM-7)</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="button" class="btn-secondary" data-close="modal-compose-sms" style="flex: 1;">Cancel</button>
+          <button type="submit" class="btn-primary" style="flex: 1;">
+            <span>Queue for Delivery</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Modal: Generate Device Pairing Code -->
+  <div id="modal-pairing-code" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Connect Android Smartphone</h3>
+        <button class="modal-close-btn" data-close="modal-pairing-code">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
+        Open the <strong>SIM SMS Gateway</strong> app on your Android phone, select <strong>Connect to Server</strong>, and enter this 8-character pairing code:
+      </div>
+
+      <div class="pairing-code-box">
+        <div class="pairing-code-display" id="pairing-code-text">---- ----</div>
+        <div style="font-size: 12px; color: var(--text-dim);" id="pairing-code-timer">Expires in 10:00</div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <button id="copy-pairing-code-btn" class="btn-secondary" style="flex: 1;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span>Copy Code</span>
+        </button>
+        <button class="btn-primary" data-close="modal-pairing-code" style="flex: 1;">Done</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Modal: Create API Key -->
+  <div id="modal-create-apikey" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Generate Client API Key</h3>
+        <button class="modal-close-btn" data-close="modal-create-apikey">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <form id="create-apikey-form">
+        <div class="form-group">
+          <label for="apikey-name">Key Identifier / Application Name</label>
+          <div class="input-container">
+            <input type="text" id="apikey-name" placeholder="e.g., My Website Backend" required style="padding-left: 14px;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Permission Scopes</label>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--text-muted); margin-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="scope-sms-send" checked> <code>sms:send</code> — Submit outgoing SMS
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="scope-sms-read" checked> <code>sms:read</code> — View queue & delivery reports
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="scope-device-manage"> <code>device:manage</code> — Manage gateway devices
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="scope-webhook-manage"> <code>webhooks:manage</code> — Manage webhooks
+            </label>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="button" class="btn-secondary" data-close="modal-create-apikey" style="flex: 1;">Cancel</button>
+          <button type="submit" class="btn-primary" style="flex: 1;">Generate API Key</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Modal: Create Webhook -->
+  <div id="modal-create-webhook" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Register New Webhook Endpoint</h3>
+        <button class="modal-close-btn" data-close="modal-create-webhook">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <form id="create-webhook-form">
+        <div class="form-group">
+          <label for="webhook-url">Target Endpoint URL (HTTPS required)</label>
+          <div class="input-container">
+            <input type="url" id="webhook-url" placeholder="https://yourwebsite.com/api/webhooks/sms" required style="padding-left: 14px;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Subscribed Events</label>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--text-muted); margin-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" value="message.delivered" checked class="wh-event-chk"> <code>message.delivered</code>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" value="message.sent" checked class="wh-event-chk"> <code>message.sent</code>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" value="message.failed" checked class="wh-event-chk"> <code>message.failed</code>
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" value="sms.received" checked class="wh-event-chk"> <code>sms.received</code>
+            </label>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="button" class="btn-secondary" data-close="modal-create-webhook" style="flex: 1;">Cancel</button>
+          <button type="submit" class="btn-primary" style="flex: 1;">Create Subscription</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Core JavaScript Module -->
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

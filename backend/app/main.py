@@ -1,9 +1,11 @@
 import asyncio
+import os
 import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import init_db
@@ -11,6 +13,9 @@ from app.core.logging import logger
 from app.api.v1.api import api_v1_router
 from app.api.v1.health import router as health_router
 from app.workers.webhook_worker import run_worker_loop, stop_worker
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 
 @asynccontextmanager
@@ -79,6 +84,36 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Mount routers
+# Mount static assets
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Mount API routers
 app.include_router(health_router)  # /health
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)  # /api/v1/...
+
+
+# SPA Frontend HTML Routes
+@app.get("/", response_class=FileResponse)
+@app.get("/login", response_class=FileResponse)
+@app.get("/dashboard", response_class=FileResponse)
+@app.get("/devices", response_class=FileResponse)
+@app.get("/messages", response_class=FileResponse)
+@app.get("/inbox", response_class=FileResponse)
+@app.get("/webhooks", response_class=FileResponse)
+@app.get("/api-keys", response_class=FileResponse)
+@app.get("/settings", response_class=FileResponse)
+async def serve_spa_frontend():
+    """Serves the Single Page Application Admin GUI."""
+    index_file = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index_file):
+        return FileResponse(index_file, media_type="text/html")
+    return HTMLResponse(
+        "<html><body style='font-family:sans-serif;background:#0b0f19;color:#fff;padding:40px;text-align:center'>"
+        "<h1>SIM SMS Gateway Mission Control</h1>"
+        "<p>Initializing admin dashboard assets...</p>"
+        "</body></html>"
+    )
+

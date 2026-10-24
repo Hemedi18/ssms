@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     DEVICE_OFFLINE_THRESHOLD_SECONDS: int = 180
     PAIRING_CODE_EXPIRE_SECONDS: int = 600
 
+    # Admin Credentials
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "hemy@2004"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -1,9 +1,12 @@
-import hmac
+import base64
 import hashlib
+import hmac
+import json
 import re
 import secrets
+import time
 from datetime import datetime, timezone
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 
 
 def hash_secret(secret: str) -> str:
@@ -108,3 +111,47 @@ def normalize_and_validate_phone(phone: str, default_country_code: str = "+255")
             f"Invalid E.164 phone number: '{phone}'. Must be + followed by 7-15 digits (e.g., +255712345678)."
         )
     return normalized
+
+
+def create_admin_token(username: str, secret_key: str, expires_in_seconds: int = 86400 * 7) -> str:
+    """
+    Creates a cryptographically signed HMAC-SHA256 session token for admin authentication.
+    """
+    payload = {
+        "sub": username,
+        "exp": int(time.time()) + expires_in_seconds,
+        "role": "admin",
+        "nonce": secrets.token_hex(8),
+    }
+    payload_json = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    payload_b64 = base64.urlsafe_b64encode(payload_json).decode("utf-8").rstrip("=")
+    signature = hmac.new(secret_key.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload_b64}.{signature}"
+
+
+def verify_admin_token(token: str, secret_key: str) -> Optional[Dict[str, Any]]:
+    """
+    Verifies the HMAC-SHA256 signature and expiration of an admin session token.
+    Returns decoded claims dict if valid, None otherwise.
+    """
+    if not token or "." not in token:
+        return None
+    parts = token.split(".")
+    if len(parts) != 2:
+        return None
+    payload_b64, signature = parts
+    expected_sig = hmac.new(secret_key.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_sig, signature):
+        return None
+    
+    # URL-safe base64 padding
+    padding = "=" * ((4 - len(payload_b64) % 4) % 4)
+    try:
+        raw_json = base64.urlsafe_b64decode(payload_b64 + padding).decode("utf-8")
+        claims = json.loads(raw_json)
+        if claims.get("exp", 0) < time.time():
+            return None
+        return claims
+    except Exception:
+        return None
+

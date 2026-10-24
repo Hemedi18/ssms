@@ -1,14 +1,15 @@
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Any
 from fastapi import Depends, HTTPException, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import hash_secret, ensure_utc
+from app.core.security import hash_secret, ensure_utc, verify_admin_token
 from app.models.api_key import ApiKey
 from app.models.device import GatewayDevice
 
@@ -23,7 +24,7 @@ def get_current_api_key(
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security_scheme),
     db: Session = Depends(get_db),
 ) -> ApiKey:
-    """Authenticates API client credentials and enforces rate limiting."""
+    """Authenticates API client credentials and enforces rate limiting. Accepts Admin tokens."""
     if not credentials or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -32,6 +33,22 @@ def get_current_api_key(
         )
 
     raw_token = credentials.credentials
+
+    # 1. Check if token is an authenticated Admin Session Token
+    admin_claims = verify_admin_token(raw_token, settings.SECRET_KEY)
+    if admin_claims:
+        admin_key = ApiKey(
+            id="admin-session",
+            name=f"Admin ({admin_claims.get('sub', 'admin')})",
+            key_hash="",
+            key_prefix="admin",
+            scopes=["admin", "sms:send", "sms:read", "device:manage", "webhook:manage"],
+            is_active=True,
+            rate_limit=10000,
+        )
+        return admin_key
+
+    # 2. Standard API key lookup
     key_hash = hash_secret(raw_token)
 
     api_key = db.scalar(
@@ -119,3 +136,24 @@ def get_current_device(
         )
 
     return device
+
+
+def get_current_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security_scheme),
+) -> Dict[str, Any]:
+    """Authenticates admin session bearer token."""
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing admin session token. Please login.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    claims = verify_admin_token(credentials.credentials, settings.SECRET_KEY)
+    if not claims:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired admin session token. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return claims
+
