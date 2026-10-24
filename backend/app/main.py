@@ -49,7 +49,7 @@ app = FastAPI(
         "into a high-reliability SMS gateway with database-backed job queues, device pairing, "
         "and signed HMAC-SHA256 webhook dispatch."
     ),
-    docs_url="/docs",
+    docs_url="/swagger",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
@@ -93,6 +93,17 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # Mount API routers
 app.include_router(health_router)  # /health
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)  # /api/v1/...
+
+
+# Interactive Documentation Portal Routes
+@app.get("/docs", response_class=FileResponse)
+@app.get("/documentation", response_class=FileResponse)
+async def serve_custom_docs():
+    """Serves the interactive animated API documentation portal."""
+    docs_file = os.path.join(STATIC_DIR, "docs.html")
+    if os.path.isfile(docs_file):
+        return FileResponse(docs_file, media_type="text/html")
+    return HTMLResponse("<html><body><h1>Documentation loading...</h1></body></html>")
 
 
 # SPA Frontend HTML Routes

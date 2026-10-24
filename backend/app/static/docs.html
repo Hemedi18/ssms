@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIM SMS Gateway — Developer Documentation & API Reference</title>
+  <meta name="description" content="Official Interactive API Reference for SIM SMS Gateway (Tanzania Edition). Turn any Android phone into a high-throughput, TCRA-compliant SMS gateway with automated carrier routing, webhooks, and multi-tenant isolation.">
+  <link rel="stylesheet" href="/static/css/docs.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+
+  <!-- Ambient Light Orbs -->
+  <div class="ambient-glow ambient-glow-1"></div>
+  <div class="ambient-glow ambient-glow-2"></div>
+  <div class="ambient-glow ambient-glow-3"></div>
+
+  <!-- Header / Navigation Bar -->
+  <header class="docs-header">
+    <a href="/" class="docs-brand">
+      <div class="docs-logo-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <div class="docs-brand-text">
+        SIM SMS Gateway <span style="font-weight: 400; color: var(--text-dim);">Docs</span>
+      </div>
+      <span class="docs-version-badge">v1.0.0 Tanzania</span>
+    </a>
+
+    <!-- Search Trigger Bar -->
+    <div class="docs-search-trigger" id="docs-search-trigger">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <span>Quick search documentation...</span>
+      <span class="search-kbd">Ctrl K</span>
+    </div>
+
+    <!-- Actions & Health Probe -->
+    <div class="docs-header-actions">
+      <div class="system-status-indicator" title="Real-time Server Liveness Probe">
+        <div class="status-dot-pulse"></div>
+        <span id="header-health-text">Online</span>
+      </div>
+      <a href="#section-playground" class="btn-doc-nav">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+        <span>API Sandbox</span>
+      </a>
+      <a href="/" class="btn-doc-nav btn-doc-primary">
+        <span>Mission Control Dashboard</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14"></path>
+          <path d="m12 5 7 7-7 7"></path>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container: Sidebar + Content -->
+  <div class="docs-container">
+
+    <!-- Sticky Left Sidebar Navigation -->
+    <aside class="docs-sidebar">
+      
+      <!-- Category 1: Getting Started -->
+      <div class="sidebar-category">
+        <div class="sidebar-category-title">Getting Started</div>
+        <ul class="sidebar-nav-list">
+          <li><a href="#section-overview" class="sidebar-link active"><span>Overview & Architecture</span></a></li>
+          <li><a href="#section-quickstart" class="sidebar-link"><span>5-Minute Quickstart</span></a></li>
+          <li><a href="#section-auth" class="sidebar-link"><span>Authentication & API Keys</span></a></li>
+          <li><a href="#section-errors" class="sidebar-link"><span>Error Codes & Retries</span></a></li>
+        </ul>
+      </div>
+
+      <!-- Category 2: Core Endpoints -->
+      <div class="sidebar-category">
+        <div class="sidebar-category-title">SMS Operations</div>
+        <ul class="sidebar-nav-list">
+          <li>
+            <a href="#ep-send-sms" class="sidebar-link">
+              <span>Send Single SMS</span>
+              <span class="sidebar-badge post">POST</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-bulk-sms" class="sidebar-link">
+              <span>Send Bulk Bundle</span>
+              <span class="sidebar-badge post">POST</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-get-sms" class="sidebar-link">
+              <span>Check SMS Status</span>
+              <span class="sidebar-badge get">GET</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-modify-sms" class="sidebar-link">
+              <span>Per-SMS Modification</span>
+              <span class="sidebar-badge post">POST</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-cancel-sms" class="sidebar-link">
+              <span>Cancel Pending SMS</span>
+              <span class="sidebar-badge post">POST</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-inbound-sms" class="sidebar-link">
+              <span>Inbound Inbox (2-Way)</span>
+              <span class="sidebar-badge get">GET</span>
+            </a>
+          </li>
+          <li>
+            <a href="#ep-devices" class="sidebar-link">
+              <span>Gateway Phones</span>
+              <span class="sidebar-badge get">GET</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Category 3: Tanzania MNO Telephony -->
+      <div class="sidebar-category">
+        <div class="sidebar-category-title">Tanzania Telephony</div>
+        <ul class="sidebar-nav-list">
+          <li><a href="#section-mno-matrix" class="sidebar-link"><span>Carrier Detection Matrix</span></a></li>
+          <li><a href="#section-encoding" class="sidebar-link"><span>GSM-7 vs UCS-2 Unicode</span></a></li>
+          <li><a href="#section-tcra-rules" class="sidebar-link"><span>TCRA Anti-Spam DND</span></a></li>
+        </ul>
+      </div>
+
+      <!-- Category 4: Webhooks & Security -->
+      <div class="sidebar-category">
+        <div class="sidebar-category-title">Webhooks & Security</div>
+        <ul class="sidebar-nav-list">
+          <li><a href="#section-webhooks" class="sidebar-link"><span>Webhook Event Delivery</span></a></li>
+          <li><a href="#section-hmac" class="sidebar-link"><span>HMAC-SHA256 Signatures</span></a></li>
+          <li><a href="#section-hardware" class="sidebar-link"><span>Hardware Keystore Security</span></a></li>
+        </ul>
+      </div>
+
+      <!-- Category 5: Interactive Sandbox -->
+      <div class="sidebar-category">
+        <div class="sidebar-category-title">Developer Sandbox</div>
+        <ul class="sidebar-nav-list">
+          <li><a href="#section-playground" class="sidebar-link"><span>Live API Playground</span> <span class="sidebar-badge new">LIVE</span></a></li>
+          <li><a href="#section-phone-tool" class="sidebar-link"><span>Phone Normalizer Tool</span></a></li>
+          <li><a href="#section-calc-tool" class="sidebar-link"><span>Segment Cost Calculator</span></a></li>
+          <li><a href="#section-wh-tool" class="sidebar-link"><span>HMAC Verifier Tool</span></a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="docs-content">
+
+      <!-- ====================================================================
+           SECTION: OVERVIEW
+           ==================================================================== -->
+      <section id="section-overview" class="doc-section" data-search-title="System Overview & Architecture" data-search-cat="Getting Started">
+        <h1 class="doc-h1">
+          <span>SIM SMS Gateway API Reference</span>
+        </h1>
+        <p class="doc-lead">
+          Transform any Android smartphone into an ultra-reliable, high-throughput, and TCRA-compliant SMS gateway with automated carrier routing, per-SMS modifications, and signed webhook dispatches.
+        </p>
+
+        <div class="grid-3">
+          <div class="feature-card">
+            <div class="feature-card-icon">⚡</div>
+            <h4>Sub-Second Queueing</h4>
+            <p>Database-backed transactional queue with FIFO prioritization and instant dispatch to available Android nodes.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🇹🇿</div>
+            <h4>Tanzania MNO Routing</h4>
+            <p>Automatic detection for Vodacom, Airtel, Tigo/Yas, Halotel & TTCL with SIM bundle optimization and DND anti-spam protection.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon">🔐</div>
+            <h4>Hardware Cryptography</h4>
+            <p>Hardware-backed AES-256-GCM encryption on device nodes, HMAC-SHA256 signed webhooks, and tenant-scoped data isolation.</p>
+          </div>
+        </div>
+
+        <div class="doc-callout info">
+          <div class="callout-icon">ℹ️</div>
+          <div class="callout-body">
+            <strong>Production API Base URL</strong>
+            All API requests in production should be addressed to <code>https://sms.edusphere.co.tz/api/v1</code> over TLS 1.3 with standard JSON request bodies.
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SECTION: QUICKSTART
+           ==================================================================== -->
+      <section id="section-quickstart" class="doc-section" data-search-title="5-Minute Quickstart Guide" data-search-cat="Getting Started">
+        <h2 class="doc-h2">
+          <span>5-Minute Quickstart Guide</span>
+        </h2>
+        <p class="doc-p">
+          Follow these 4 simple steps to start sending SMS messages through your hardware phone gateway:
+        </p>
+
+        <div class="step-container">
+          <div class="step-item">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Install App & Pair Android Device</h3>
+              <p class="doc-p">Install the <strong>SIM SMS Gateway</strong> app on your Android smartphone. On your web dashboard, click <strong>Connect Android Smartphone</strong>, generate an 8-character pairing code, and enter it into the app.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Create a Client API Key</h3>
+              <p class="doc-p">Navigate to <strong>API Keys</strong> in your dashboard and generate an API key with <code>sms:send</code> and <code>sms:read</code> permission scopes.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Submit Your First Outgoing SMS</h3>
+              <p class="doc-p">Dispatch a simple cURL or Python POST request to <code>/api/v1/messages</code>:</p>
+              <div style="background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px; font-family: var(--font-mono); font-size: 13px; color: #a5b4fc;">
+                curl -X POST "https://sms.edusphere.co.tz/api/v1/messages" \<br>
+                &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \<br>
+                &nbsp;&nbsp;-H "Content-Type: application/json" \<br>
+                &nbsp;&nbsp;-d '{"recipient": "+255712345678", "body": "Welcome to our service!"}'
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>Listen for Real-Time Webhooks</h3>
+              <p class="doc-p">Register your HTTPS webhook endpoint to receive immediate callbacks with delivery timestamps and carrier report codes.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SECTION: AUTHENTICATION
+           ==================================================================== -->
+      <section id="section-auth" class="doc-section" data-search-title="Authentication & API Keys" data-search-cat="Getting Started">
+        <h2 class="doc-h2">
+          <span>Authentication & API Keys</span>
+        </h2>
+        <p class="doc-p">
+          All API requests must authenticate using an API Key or JWT Bearer Token in the HTTP <code>Authorization</code> header:
+        </p>
+
+        <div style="background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px 18px; font-family: var(--font-mono); font-size: 13px; color: #38bdf8; margin: 16px 0;">
+          Authorization: Bearer sms_live_9a8f4c2e...
+        </div>
+
+        <p class="doc-p">Alternatively, you can pass the key in the custom header <code>X-API-Key: &lt;key&gt;</code>.</p>
+
+        <h3 class="doc-h3">Available Permission Scopes</h3>
+        <div class="params-table-container">
+          <table class="params-table">
+            <thead>
+              <tr>
+                <th>Scope</th>
+                <th>Access Level</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code class="param-name">sms:send</code></td>
+                <td>Write</td>
+                <td>Allows queuing single SMS and bulk message bundles.</td>
+              </tr>
+              <tr>
+                <td><code class="param-name">sms:read</code></td>
+                <td>Read</td>
+                <td>Allows checking message delivery status and incoming inbox SMS.</td>
+              </tr>
+              <tr>
+                <td><code class="param-name">sms:modify</code></td>
+                <td>Write</td>
+                <td>Allows modifying or cancelling queued messages before transmission.</td>
+              </tr>
+              <tr>
+                <td><code class="param-name">device:manage</code></td>
+                <td>Admin</td>
+                <td>Allows pairing, pinging, and managing Android gateway hardware nodes.</td>
+              </tr>
+              <tr>
+                <td><code class="param-name">webhooks:manage</code></td>
+                <td>Admin</td>
+                <td>Allows creating and editing webhook subscriptions and secret tokens.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           CORE API ENDPOINTS
+           ==================================================================== -->
+
+      <!-- ENDPOINT 1: SEND SINGLE SMS -->
+      <section id="ep-send-sms" class="doc-section" data-search-title="POST /api/v1/messages (Send SMS)" data-search-cat="SMS Operations" data-search-badge="POST">
+        <div class="endpoint-panel" data-method="POST" data-path="/api/v1/messages" data-body='{
+  "recipient": "+255712345678",
+  "body": "Your one-time passcode is 948201. Valid for 10 minutes.",
+  "priority": 5,
+  "sim_slot": 1,
+  "client_reference": "TXN-88492"
+}'>
+          <div class="endpoint-header">
+            <div class="endpoint-route">
+              <span class="method-pill post">POST</span>
+              <span class="endpoint-path">/api/v1/messages</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="endpoint-scope">scope: sms:send</span>
+              <button class="btn-doc-nav btn-sm btn-try-endpoint" data-endpoint-key="sendSms" style="padding: 4px 10px; font-size: 11px;">
+                <span>Try in Sandbox</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="endpoint-body">
+            <!-- Left Column: Description & Parameters -->
+            <div class="endpoint-desc-col">
+              <p class="doc-p" style="font-weight: 500;">
+                Submits an outgoing SMS to the transaction queue. Automatically detects the recipient's Tanzania carrier, validates GSM-7 character sets, and routes to the best SIM card.
+              </p>
+
+              <h4 style="font-size: 13px; font-weight: 700; color: #fff; margin: 18px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">Request Body</h4>
+              <div class="params-table-container">
+                <table class="params-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="param-name">recipient</span> <span class="param-required">*</span></td>
+                      <td><span class="param-type">string</span></td>
+                      <td>Phone number in E.164 (e.g. <code>+255712345678</code>) or national format (<code>0712345678</code>).</td>
+                    </tr>
+                    <tr>
+                      <td><span class="param-name">body</span> <span class="param-required">*</span></td>
+                      <td><span class="param-type">string</span></td>
+                      <td>SMS message text. Multi-part concatenation is supported automatically.</td>
+                    </tr>
+                    <tr>
+                      <td><span class="param-name">priority</span></td>
+                      <td><span class="param-type">integer</span></td>
+                      <td>Priority level 1 (highest/OTP) to 10 (bulk marketing). Default: <code>5</code>.</td>
+                    </tr>
+                    <tr>
+                      <td><span class="param-name">sim_slot</span></td>
+                      <td><span class="param-type">integer</span></td>
+                      <td>Force specific SIM: <code>1</code> for SIM 1, <code>2</code> for SIM 2. Default: <code>null</code> (auto-detect based on carrier).</td>
+                    </tr>
+                    <tr>
+                      <td><span class="param-name">client_reference</span></td>
+                      <td><span class="param-type">string</span></td>
+                      <td>Your internal transaction or tracking reference ID.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Right Column: Code Tabs & Live Snippet -->
+            <div class="endpoint-code-col">
+              <div class="code-tab-header">
+                <div class="code-lang-selector">
+                  <button class="code-lang-btn active" data-lang="curl">cURL</button>
+                  <button class="code-lang-btn" data-lang="python">Python</button>
+                  <button class="code-lang-btn" data-lang="javascript">Node.js</button>
+                  <button class="code-lang-btn" data-lang="php">PHP</button>
+                  <button class="code-lang-btn" data-lang="java">Java</button>
+                </div>
+                <button class="btn-copy-code" title="Copy snippet">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy</span>
+                </button>
+              </div>
+
+              <pre class="code-pre"><code>Loading snippet...</code></pre>
+
+              <div class="code-response-header">
+                <span>Example 201 Created Response</span>
+                <span class="status-code-badge">HTTP 201</span>
+              </div>
+              <pre class="code-pre" style="color: #6ee7b7;"><code>{
+  "id": "e4f3a71b-8219-4b62-b912-98e3b7149a10",
+  "recipient": "+255712345678",
+  "carrier": "Tigo / Yas",
+  "status": "queued",
+  "encoding": "GSM-7",
+  "segments": 1,
+  "priority": 5,
+  "client_reference": "TXN-88492",
+  "created_at": "2026-10-24T20:15:30.124Z"
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENDPOINT 2: SEND BULK BUNDLE -->
+      <section id="ep-bulk-sms" class="doc-section" data-search-title="POST /api/v1/messages/bundle (Bulk SMS)" data-search-cat="SMS Operations" data-search-badge="POST">
+        <div class="endpoint-panel" data-method="POST" data-path="/api/v1/messages/bundle" data-body='{
+  "messages": [
+    { "recipient": "+255712345678", "body": "Reminder: Meeting starts at 10:00 AM." },
+    { "recipient": "+255754998877", "body": "Reminder: Meeting starts at 10:00 AM." },
+    { "recipient": "+255688112233", "body": "Reminder: Meeting starts at 10:00 AM." }
+  ],
+  "campaign_name": "Board Meeting Reminders"
+}'>
+          <div class="endpoint-header">
+            <div class="endpoint-route">
+              <span class="method-pill post">POST</span>
+              <span class="endpoint-path">/api/v1/messages/bundle</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="endpoint-scope">scope: sms:send</span>
+              <button class="btn-doc-nav btn-sm btn-try-endpoint" data-endpoint-key="bulkSms" style="padding: 4px 10px; font-size: 11px;">
+                <span>Try in Sandbox</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="endpoint-body">
+            <div class="endpoint-desc-col">
+              <p class="doc-p" style="font-weight: 500;">
+                Submits up to 1,000 SMS messages in an atomic bulk transaction. Each message is independently normalized, validated against TCRA DND lists, and queued for multi-SIM parallel dispatch.
+              </p>
+              <h4 style="font-size: 13px; font-weight: 700; color: #fff; margin: 18px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px;">Parameters</h4>
+              <div class="params-table-container">
+                <table class="params-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="param-name">messages</span> <span class="param-required">*</span></td>
+                      <td><span class="param-type">array&lt;object&gt;</span></td>
+                      <td>Array of recipient and body pairs (max 1,000 items per batch).</td>
+                    </tr>
+                    <tr>
+                      <td><span class="param-name">campaign_name</span></td>
+                      <td><span class="param-type">string</span></td>
+                      <td>Optional identifier for batch analytics and group reporting.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="endpoint-code-col">
+              <div class="code-tab-header">
+                <div class="code-lang-selector">
+                  <button class="code-lang-btn active" data-lang="curl">cURL</button>
+                  <button class="code-lang-btn" data-lang="python">Python</button>
+                  <button class="code-lang-btn" data-lang="javascript">Node.js</button>
+                  <button class="code-lang-btn" data-lang="php">PHP</button>
+                  <button class="code-lang-btn" data-lang="java">Java</button>
+                </div>
+                <button class="btn-copy-code" title="Copy snippet">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy</span>
+                </button>
+              </div>
+
+              <pre class="code-pre"><code>Loading snippet...</code></pre>
+
+              <div class="code-response-header">
+                <span>Example 201 Created Response</span>
+                <span class="status-code-badge">HTTP 201</span>
+              </div>
+              <pre class="code-pre" style="color: #6ee7b7;"><code>{
+  "bundle_id": "bnd_918204aa71ef48",
+  "total_submitted": 3,
+  "total_accepted": 3,
+  "total_segments": 3,
+  "carrier_breakdown": {
+    "Tigo / Yas": 1,
+    "Vodacom": 1,
+    "Airtel": 1
+  },
+  "status": "processing"
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENDPOINT 3: PER-SMS MODIFICATION -->
+      <section id="ep-modify-sms" class="doc-section" data-search-title="POST /api/v1/messages/{id}/modify" data-search-cat="SMS Operations" data-search-badge="POST">
+        <div class="endpoint-panel" data-method="POST" data-path="/api/v1/messages/e4f3a71b-8219-4b62-b912-98e3b7149a10/modify" data-body='{
+  "body": "Updated message text prior to hardware dispatch",
+  "priority": 1,
+  "sim_slot": 2
+}'>
+          <div class="endpoint-header">
+            <div class="endpoint-route">
+              <span class="method-pill post">POST</span>
+              <span class="endpoint-path">/api/v1/messages/{id}/modify</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="endpoint-scope">scope: sms:modify</span>
+              <button class="btn-doc-nav btn-sm btn-try-endpoint" data-endpoint-key="modifySms" style="padding: 4px 10px; font-size: 11px;">
+                <span>Try in Sandbox</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="endpoint-body">
+            <div class="endpoint-desc-col">
+              <p class="doc-p" style="font-weight: 500;">
+                Live Modification Engine: Alter the text content, priority queue position, or outbound SIM slot of any queued SMS before it is fetched by an Android gateway device.
+              </p>
+              <div class="doc-callout tip">
+                <div class="callout-icon">💡</div>
+                <div class="callout-body">
+                  <strong>Zero Collision Lock</strong>
+                  If the phone has already acquired the message, this endpoint safely returns <code>409 Conflict</code> to prevent duplicate sends.
+                </div>
+              </div>
+            </div>
+
+            <div class="endpoint-code-col">
+              <div class="code-tab-header">
+                <div class="code-lang-selector">
+                  <button class="code-lang-btn active" data-lang="curl">cURL</button>
+                  <button class="code-lang-btn" data-lang="python">Python</button>
+                  <button class="code-lang-btn" data-lang="javascript">Node.js</button>
+                  <button class="code-lang-btn" data-lang="php">PHP</button>
+                  <button class="code-lang-btn" data-lang="java">Java</button>
+                </div>
+                <button class="btn-copy-code" title="Copy snippet">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy</span>
+                </button>
+              </div>
+
+              <pre class="code-pre"><code>Loading snippet...</code></pre>
+
+              <div class="code-response-header">
+                <span>Example 200 OK Response</span>
+                <span class="status-code-badge">HTTP 200</span>
+              </div>
+              <pre class="code-pre" style="color: #6ee7b7;"><code>{
+  "id": "e4f3a71b-8219-4b62-b912-98e3b7149a10",
+  "status": "queued",
+  "modified": true,
+  "new_priority": 1,
+  "new_sim_slot": 2,
+  "updated_at": "2026-10-24T20:18:44.201Z"
+}</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENDPOINT 4: INBOUND INBOX (2-WAY SMS) -->
+      <section id="ep-inbound-sms" class="doc-section" data-search-title="GET /api/v1/incoming (Inbound 2-Way SMS)" data-search-cat="SMS Operations" data-search-badge="GET">
+        <div class="endpoint-panel" data-method="GET" data-path="/api/v1/incoming?limit=20">
+          <div class="endpoint-header">
+            <div class="endpoint-route">
+              <span class="method-pill get">GET</span>
+              <span class="endpoint-path">/api/v1/incoming</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="endpoint-scope">scope: sms:read</span>
+              <button class="btn-doc-nav btn-sm btn-try-endpoint" data-endpoint-key="listIncoming" style="padding: 4px 10px; font-size: 11px;">
+                <span>Try in Sandbox</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="endpoint-body">
+            <div class="endpoint-desc-col">
+              <p class="doc-p" style="font-weight: 500;">
+                Retrieves incoming SMS messages received by your paired Android phone SIM cards. Supports pagination, sender telephone filtering, and date boundaries.
+              </p>
+            </div>
+
+            <div class="endpoint-code-col">
+              <div class="code-tab-header">
+                <div class="code-lang-selector">
+                  <button class="code-lang-btn active" data-lang="curl">cURL</button>
+                  <button class="code-lang-btn" data-lang="python">Python</button>
+                  <button class="code-lang-btn" data-lang="javascript">Node.js</button>
+                  <button class="code-lang-btn" data-lang="php">PHP</button>
+                  <button class="code-lang-btn" data-lang="java">Java</button>
+                </div>
+                <button class="btn-copy-code" title="Copy snippet">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy</span>
+                </button>
+              </div>
+
+              <pre class="code-pre"><code>Loading snippet...</code></pre>
+
+              <div class="code-response-header">
+                <span>Example 200 OK Response</span>
+                <span class="status-code-badge">HTTP 200</span>
+              </div>
+              <pre class="code-pre" style="color: #6ee7b7;"><code>[
+  {
+    "id": "9a01cf2e-4b12-421b-a984-71289cf18420",
+    "sender": "+255621120705",
+    "body": "NIMEKUBALI",
+    "received_at": "2026-10-24T08:32:00.114Z",
+    "sim_slot": 1,
+    "device_name": "itel S665L (Main Gateway)"
+  }
+]</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SECTION: TANZANIA TELEPHONY & TCRA RULES
+           ==================================================================== -->
+      <section id="section-mno-matrix" class="doc-section" data-search-title="Tanzania MNO Carrier Matrix" data-search-cat="Tanzania Telephony">
+        <h2 class="doc-h2">
+          <span>Tanzania Carrier Matrix & Number Normalization</span>
+        </h2>
+        <p class="doc-p">
+          The gateway includes built-in recognition for all major Mobile Network Operators in Tanzania. Outgoing messages are dynamically matched against prefix tables:
+        </p>
+
+        <div class="grid-2">
+          <div class="feature-card">
+            <h4><span class="mno-tag mno-voda">Vodacom</span> Vodacom Tanzania</h4>
+            <p style="margin-top: 8px;"><strong>Prefixes:</strong> <code>074x</code>, <code>075x</code>, <code>076x</code></p>
+            <p style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Optimized for high-throughput OTP delivery and M-Pesa transaction alerts.</p>
+          </div>
+          <div class="feature-card">
+            <h4><span class="mno-tag mno-airtel">Airtel</span> Airtel Tanzania</h4>
+            <p style="margin-top: 8px;"><strong>Prefixes:</strong> <code>068x</code>, <code>069x</code>, <code>078x</code></p>
+            <p style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Direct bundle pairing with Airtel Money notification webhooks.</p>
+          </div>
+          <div class="feature-card">
+            <h4><span class="mno-tag mno-tigo">Tigo</span> Tigo / Yas / Mixx</h4>
+            <p style="margin-top: 8px;"><strong>Prefixes:</strong> <code>065x</code>, <code>067x</code>, <code>071x</code></p>
+            <p style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Fast local routing with dual-SIM load balancing.</p>
+          </div>
+          <div class="feature-card">
+            <h4><span class="mno-tag mno-halo">Halotel</span> Halotel (Viettel)</h4>
+            <p style="margin-top: 8px;"><strong>Prefixes:</strong> <code>061x</code>, <code>062x</code></p>
+            <p style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Broad rural coverage across continental Tanzania.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION: GSM-7 VS UCS-2 -->
+      <section id="section-encoding" class="doc-section" data-search-title="GSM-7 vs UCS-2 Unicode Encoding" data-search-cat="Tanzania Telephony">
+        <h2 class="doc-h2">
+          <span>GSM-7 vs UCS-2 Character Encoding</span>
+        </h2>
+        <p class="doc-p">
+          Understanding SMS character sets prevents unexpected multi-part charges:
+        </p>
+        <div class="params-table-container">
+          <table class="params-table">
+            <thead>
+              <tr>
+                <th>Encoding Standard</th>
+                <th>Characters per 1st Segment</th>
+                <th>Characters per Subsequent Segment</th>
+                <th>Supported Characters</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong style="color: #34d399;">GSM-7 (Standard)</strong></td>
+                <td>160 characters</td>
+                <td>153 characters</td>
+                <td>English alphabet, numbers, punctuation, standard Swahili text.</td>
+              </tr>
+              <tr>
+                <td><strong style="color: #f59e0b;">UCS-2 (Unicode)</strong></td>
+                <td>70 characters</td>
+                <td>67 characters</td>
+                <td>Emojis (🚀, 😊), Arabic/Swahili loan characters, accented characters.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SECTION: WEBHOOKS & HMAC SIGNATURES
+           ==================================================================== -->
+      <section id="section-webhooks" class="doc-section" data-search-title="Webhook Event Dispatch" data-search-cat="Webhooks & Security">
+        <h2 class="doc-h2">
+          <span>Webhook Event Dispatch</span>
+        </h2>
+        <p class="doc-p">
+          Whenever a message changes state (queued, sent, delivered, failed) or an inbound SMS arrives, the gateway posts an HTTPS JSON payload to your registered webhook URL.
+        </p>
+
+        <h3 class="doc-h3">Webhook Delivery Headers</h3>
+        <div style="background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px 18px; font-family: var(--font-mono); font-size: 13px; color: #a5b4fc; margin: 16px 0;">
+          X-Event: message.delivered<br>
+          X-Signature: c89a421b8f042e88a0e81b...<br>
+          X-Timestamp: 1792866940<br>
+          Content-Type: application/json
+        </div>
+
+        <h3 class="doc-h3">Verifying the HMAC-SHA256 Signature</h3>
+        <p class="doc-p">Always verify the <code>X-Signature</code> header in your backend code to protect against spoofing:</p>
+
+        <div style="background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 18px; font-family: var(--font-mono); font-size: 13px; color: #e2e8f0; line-height: 1.6;">
+          <span style="color: #64748b;"># Python verification example</span><br>
+          <span style="color: #f43f5e;">import</span> hmac, hashlib<br><br>
+          <span style="color: #38bdf8;">def</span> <span style="color: #a78bfa;">verify_webhook</span>(raw_body_bytes, signature_header, secret_key):<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;expected = hmac.new(secret_key.encode(), raw_body_bytes, hashlib.sha256).hexdigest()<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #f43f5e;">return</span> hmac.compare_digest(expected, signature_header)
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SECTION: INTERACTIVE DEVELOPER TOOLS & PLAYGROUND
+           ==================================================================== -->
+      
+      <!-- TOOL 1: INTERACTIVE API PLAYGROUND -->
+      <section id="section-playground" class="doc-section" data-search-title="Live API Playground Console" data-search-cat="Developer Sandbox" data-search-badge="LIVE">
+        <h2 class="doc-h2">
+          <span>Live API Playground Console</span>
+        </h2>
+        <p class="doc-p">
+          Execute real test requests directly against your gateway server with real-time status codes, headers, and duration metrics.
+        </p>
+
+        <div class="playground-box">
+          <div class="playground-topbar">
+            <span style="font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase;">Endpoint:</span>
+            <select id="playground-endpoint-select" class="tool-input" style="min-width: 260px; max-width: 320px; padding: 6px 12px; font-size: 13px;">
+              <option value="sendSms">POST /api/v1/messages (Send SMS)</option>
+              <option value="bulkSms">POST /api/v1/messages/bundle (Bulk Bundle)</option>
+              <option value="listSms">GET /api/v1/messages (List Queue)</option>
+              <option value="listIncoming">GET /api/v1/incoming (Inbound Inbox)</option>
+              <option value="listDevices">GET /api/v1/devices (Gateway Phones)</option>
+              <option value="systemHealth">GET /health (System Liveness)</option>
+            </select>
+
+            <span id="playground-method-badge" class="method-pill post">POST</span>
+            <input type="text" id="playground-path-input" value="/api/v1/messages" class="tool-input" style="flex: 1; padding: 6px 12px; font-size: 13px;">
+
+            <button id="btn-playground-execute" class="btn-doc-nav btn-doc-primary" style="padding: 6px 16px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Execute</span>
+            </button>
+          </div>
+
+          <div class="playground-grid">
+            <div class="playground-input-side">
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; display: block; margin-bottom: 6px;">Authorization Token / API Key</label>
+              <input type="text" id="playground-auth-input" placeholder="Enter Bearer Token or leave blank for /health" class="tool-input" style="width: 100%; margin-bottom: 16px; font-size: 13px;">
+
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; display: block; margin-bottom: 6px;">JSON Request Body</label>
+              <textarea id="playground-body-input" class="tool-textarea" rows="8" style="font-family: var(--font-mono); font-size: 12px;"></textarea>
+            </div>
+
+            <div class="playground-output-side">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle);">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span style="font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase;">Response:</span>
+                  <span id="playground-status-badge" style="font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: #94a3b8;">Idle</span>
+                </div>
+                <span id="playground-time-badge" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);">0 ms</span>
+              </div>
+              <pre class="code-pre" id="playground-response-output" style="flex: 1; min-height: 200px; color: #cbd5e1;"><code>Click "Execute" to trigger live API request...</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TOOL 2: TANZANIA PHONE NORMALIZER -->
+      <section id="section-phone-tool" class="doc-section" data-search-title="Tanzania Phone Number Normalizer" data-search-cat="Developer Sandbox">
+        <h2 class="doc-h2">
+          <span>Interactive Tanzania Phone Normalizer</span>
+        </h2>
+        <p class="doc-p">Test raw phone numbers to inspect canonical E.164 formatting and carrier identification:</p>
+
+        <div class="interactive-tool-card">
+          <div class="tool-header">
+            <div class="tool-icon">🇹🇿</div>
+            <div>
+              <h3>Tanzania Number & MNO Inspector</h3>
+              <p style="font-size: 13px; color: var(--text-muted);">Enter any national or international Tanzanian phone number</p>
+            </div>
+          </div>
+
+          <div class="tool-input-row">
+            <input type="text" id="tz-phone-test-input" placeholder="e.g. 0712345678, +255 754 112 233, or 255688990011" class="tool-input">
+          </div>
+
+          <div id="tz-phone-test-result" class="tool-result-box" style="display: none;"></div>
+        </div>
+      </section>
+
+      <!-- TOOL 3: GSM-7 SEGMENT CALCULATOR -->
+      <section id="section-calc-tool" class="doc-section" data-search-title="SMS Segment & Cost Calculator" data-search-cat="Developer Sandbox">
+        <h2 class="doc-h2">
+          <span>GSM-7 vs UCS-2 Segment & Cost Calculator</span>
+        </h2>
+        <p class="doc-p">Type or paste any SMS text to verify billable segments, encoding standard, and carrier cost:</p>
+
+        <div class="interactive-tool-card">
+          <div class="tool-header">
+            <div class="tool-icon">💬</div>
+            <div>
+              <h3>Real-Time Character Counter</h3>
+              <p style="font-size: 13px; color: var(--text-muted);">Calculates concatenated payload boundaries and Swahili / emoji detection</p>
+            </div>
+          </div>
+
+          <textarea id="sms-calc-textarea" class="tool-textarea" placeholder="Type your SMS message here to inspect segments..."></textarea>
+
+          <div id="sms-calc-result" class="tool-result-box">
+            <div class="result-item">
+              <span class="result-label">Total Characters:</span>
+              <span class="result-value">0</span>
+            </div>
+            <div class="result-item">
+              <span class="result-label">Detected Encoding:</span>
+              <span class="result-value" style="color: #34d399;">GSM-7 (Standard)</span>
+            </div>
+            <div class="result-item">
+              <span class="result-label">SMS Billable Segments:</span>
+              <span class="result-value">0 Parts</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TOOL 4: HMAC VERIFIER -->
+      <section id="section-wh-tool" class="doc-section" data-search-title="Webhook HMAC-SHA256 Verifier" data-search-cat="Developer Sandbox">
+        <h2 class="doc-h2">
+          <span>Webhook HMAC-SHA256 Signature Calculator</span>
+        </h2>
+        <p class="doc-p">Generate and test HMAC-SHA256 signatures for your webhook handlers directly in browser memory:</p>
+
+        <div class="interactive-tool-card">
+          <div class="tool-header">
+            <div class="tool-icon">🔑</div>
+            <div>
+              <h3>HMAC-SHA256 Tester</h3>
+              <p style="font-size: 13px; color: var(--text-muted);">Calculates the exact X-Signature header sent by the webhook worker</p>
+            </div>
+          </div>
+
+          <input type="text" id="wh-secret-input" placeholder="Enter Webhook Secret Key (e.g. whsec_9a8f4c2e...)" class="tool-input" style="width: 100%; margin-bottom: 12px;">
+          <textarea id="wh-payload-input" class="tool-textarea" placeholder='{"event":"message.delivered","id":"MSG-101"}'></textarea>
+
+          <button id="btn-calc-wh-sig" class="btn-doc-nav btn-doc-primary" style="margin-top: 8px;">
+            <span>Calculate Signature</span>
+          </button>
+
+          <div class="tool-result-box" style="margin-top: 16px;">
+            <div class="result-item">
+              <span class="result-label">Computed X-Signature:</span>
+              <span class="result-value" id="wh-signature-result" style="font-size: 12px; word-break: break-all; color: var(--color-cyan);">Click button to calculate</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Search Modal (Ctrl+K) -->
+  <div class="docs-modal-overlay" id="docs-search-modal">
+    <div class="docs-modal-card">
+      <div class="modal-search-input-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="docs-search-input" placeholder="Type a command, endpoint, or topic (e.g. 'bulk', 'tigo', 'modify')...">
+        <span class="search-kbd">ESC</span>
+      </div>
+      <div class="modal-search-results" id="docs-search-results"></div>
+    </div>
+  </div>
+
+  <!-- Documentation Interactive Engine Script -->
+  <script src="/static/js/docs.js"></script>
+</body>
+</html>
