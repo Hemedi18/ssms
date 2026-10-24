@@ -53,3 +53,7 @@ android-app/local.properties
 *.swp
 *.swo
 .DS_Store
+phone_screen.png
+*.tar.gz
+backend/app/gnirehtet/
+
