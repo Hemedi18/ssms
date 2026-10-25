@@ -284,6 +284,9 @@
       case 'settings':
         fetchSystemSettings();
         break;
+      case 'ai':
+        fetchAiConfig();
+        break;
     }
   }
 
@@ -2213,9 +2216,376 @@
     }
   };
 
+  // ========================================================================
+  // 15. GOOGLE AI STUDIO (GEMINI) INTELLIGENCE & PLAYGROUND
+  // ========================================================================
+  const AI_PROMPT_PRESETS = {
+    bilingual: 'Wewe ni msaidizi mahiri wa SMS wa biashara yetu. Jibu kwa lugha ileile ya mteja (Kiswahili au Kiingereza). Toa majibu mafupi, yenye heshima, na kueleweka moja kwa moja (yasizidi herufi 160 inapowezekana, ukomo herufi 300). USITUMIE alama za markdown (kama nyota *, herufi nene, vichwa vya habari #, au bullet points) kwa sababu ujumbe huu unatumwa kama SMS ya kawaida kwenye simu ya mkononi.',
+    support: 'Wewe ni mhudumu wa kitengo cha huduma kwa wateja (Customer Support). Jibu kwa unyenyekevu na utatue changamoto ya mteja kwa ufupi sana kwenye SMS bila kutumia alama za markdown.',
+    sales: 'Wewe ni msaidizi wa mauzo na maagizo. Karibisha mteja, mweleze jinsi ya kuthibitisha oda yake, na uombe maelezo ya eneo lake na huduma anayohitaji kwa ufupi wa ujumbe 1 wa SMS.',
+    brief: 'You are a concise SMS responder. Answer in 1 single sentence under 150 characters. No markdown, no filler words.'
+  };
+
+  async function fetchAiConfig() {
+    try {
+      const cfg = await apiFetch('/admin/ai-config');
+      
+      // Update Quick Metrics & Badges
+      const engineBadge = document.getElementById('ai-engine-badge');
+      const statEngine = document.getElementById('ai-stat-engine');
+      const quickToggle = document.getElementById('ai-quick-toggle');
+      const formToggle = document.getElementById('ai-cfg-toggle');
+
+      if (cfg.ai_auto_reply_enabled) {
+        if (engineBadge) { engineBadge.className = 'badge badge-success'; engineBadge.textContent = 'ACTIVE'; }
+        if (statEngine) { statEngine.textContent = 'ENABLED'; statEngine.style.color = '#d8b4fe'; }
+        if (quickToggle) quickToggle.checked = true;
+        if (formToggle) formToggle.checked = true;
+      } else {
+        if (engineBadge) { engineBadge.className = 'badge badge-neutral'; engineBadge.textContent = 'STANDBY'; }
+        if (statEngine) { statEngine.textContent = 'DISABLED'; statEngine.style.color = 'var(--text-dim)'; }
+        if (quickToggle) quickToggle.checked = false;
+        if (formToggle) formToggle.checked = false;
+      }
+
+      const statModel = document.getElementById('ai-stat-model');
+      if (statModel) statModel.textContent = cfg.gemini_model;
+
+      const modelSelect = document.getElementById('ai-cfg-model');
+      if (modelSelect) modelSelect.value = cfg.gemini_model;
+
+      const statKeyStatus = document.getElementById('ai-stat-key-status');
+      const statKeyMasked = document.getElementById('ai-stat-key-masked');
+      const keyPill = document.getElementById('ai-key-pill');
+      const apiKeyInput = document.getElementById('ai-cfg-api-key');
+
+      if (cfg.gemini_api_key_set) {
+        if (statKeyStatus) { statKeyStatus.textContent = 'CONFIGURED'; statKeyStatus.style.color = 'var(--color-emerald)'; }
+        if (statKeyMasked) statKeyMasked.textContent = cfg.gemini_api_key_masked || '••••••••';
+        if (keyPill) { keyPill.className = 'badge badge-success'; keyPill.textContent = 'Configured'; }
+        if (apiKeyInput) apiKeyInput.placeholder = `Current Key: ${cfg.gemini_api_key_masked} (Type new key to change)`;
+      } else {
+        if (statKeyStatus) { statKeyStatus.textContent = 'MISSING KEY'; statKeyStatus.style.color = 'var(--color-rose)'; }
+        if (statKeyMasked) statKeyMasked.textContent = 'Paste key from Google AI Studio';
+        if (keyPill) { keyPill.className = 'badge badge-danger'; keyPill.textContent = 'Unconfigured'; }
+        if (apiKeyInput) apiKeyInput.placeholder = 'Paste your Google AI Studio API key here...';
+      }
+
+      const envFileEl = document.getElementById('ai-stat-env-file');
+      if (envFileEl) envFileEl.textContent = cfg.env_file_path || '.env';
+
+      const promptInput = document.getElementById('ai-cfg-prompt');
+      if (promptInput) {
+        promptInput.value = cfg.ai_system_prompt || '';
+        updatePromptCounter();
+      }
+
+      const brandInput = document.getElementById('ai-cfg-brand');
+      if (brandInput) brandInput.value = cfg.ai_reply_sender_name || '';
+
+      const tokensSlider = document.getElementById('ai-cfg-tokens');
+      const tokensVal = document.getElementById('ai-tokens-val');
+      if (tokensSlider) {
+        tokensSlider.value = cfg.ai_max_output_tokens || 150;
+        if (tokensVal) tokensVal.textContent = tokensSlider.value;
+      }
+
+      const tempSlider = document.getElementById('ai-cfg-temp');
+      const tempVal = document.getElementById('ai-temp-val');
+      if (tempSlider) {
+        tempSlider.value = cfg.ai_temperature || 0.7;
+        if (tempVal) tempVal.textContent = tempSlider.value;
+      }
+
+    } catch (err) {
+      console.error('Failed to load AI configuration:', err);
+    }
+  }
+
+  function updatePromptCounter() {
+    const el = document.getElementById('ai-cfg-prompt');
+    const lenEl = document.getElementById('ai-prompt-length');
+    if (el && lenEl) {
+      lenEl.textContent = `${el.value.length} chars`;
+    }
+  }
+
+  async function saveAiConfiguration(e) {
+    if (e) e.preventDefault();
+    const saveBtn = document.getElementById('btn-save-ai-cfg');
+    const origHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span>Saving to .env...</span>';
+    }
+
+    try {
+      const payload = {
+        ai_auto_reply_enabled: document.getElementById('ai-cfg-toggle').checked,
+        gemini_model: document.getElementById('ai-cfg-model').value,
+        ai_system_prompt: document.getElementById('ai-cfg-prompt').value,
+        ai_max_output_tokens: parseInt(document.getElementById('ai-cfg-tokens').value, 10),
+        ai_temperature: parseFloat(document.getElementById('ai-cfg-temp').value),
+        ai_reply_sender_name: document.getElementById('ai-cfg-brand').value
+      };
+
+      const newKey = document.getElementById('ai-cfg-api-key').value.trim();
+      if (newKey) {
+        payload.gemini_api_key = newKey;
+      }
+
+      const res = await apiFetch('/admin/ai-config', {
+        method: 'POST',
+        body: payload
+      });
+
+      showToast('AI Settings saved & persisted to server .env successfully!', 'success');
+      
+      // Clear raw key input so it doesn't linger in DOM
+      const keyInput = document.getElementById('ai-cfg-api-key');
+      if (keyInput) keyInput.value = '';
+
+      fetchAiConfig();
+    } catch (err) {
+      showToast(err.message || 'Failed to save AI configuration', 'error');
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  async function triggerPlaygroundTest() {
+    const input = document.getElementById('ai-test-input');
+    const text = input ? input.value.trim() : '';
+    if (!text) {
+      showToast('Please type a message to test', 'warning');
+      return;
+    }
+
+    const chatThread = document.getElementById('ai-chat-thread');
+    const sendBtn = document.getElementById('btn-send-ai-test');
+
+    // 1. Append User Message Bubble
+    const userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble chat-bubble-user';
+    userBubble.innerHTML = `
+      <div>${escapeHtml(text)}</div>
+      <div class="chat-meta" style="justify-content: flex-end;">
+        <span>Simulated SMS • ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+      </div>
+    `;
+    if (chatThread) {
+      chatThread.appendChild(userBubble);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
+    if (input) input.value = '';
+    if (sendBtn) sendBtn.disabled = true;
+
+    // 2. Append Typing Indicator
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-indicator';
+    typingIndicator.id = 'ai-typing-ind';
+    typingIndicator.innerHTML = `
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span style="font-size: 11px; color: #c084fc; margin-left: 4px;">Gemini thinking...</span>
+    `;
+    if (chatThread) {
+      chatThread.appendChild(typingIndicator);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
+    // 3. Make API call
+    try {
+      const res = await apiFetch('/admin/ai-test', {
+        method: 'POST',
+        body: {
+          message: text,
+          model: document.getElementById('ai-cfg-model') ? document.getElementById('ai-cfg-model').value : null,
+          system_instruction: document.getElementById('ai-cfg-prompt') ? document.getElementById('ai-cfg-prompt').value : null
+        }
+      });
+
+      // Remove typing indicator
+      const ind = document.getElementById('ai-typing-ind');
+      if (ind) ind.remove();
+
+      // Append AI Reply Bubble
+      const aiBubble = document.createElement('div');
+      aiBubble.className = 'chat-bubble chat-bubble-ai';
+
+      if (res.status === 'success' && res.reply) {
+        aiBubble.innerHTML = `
+          <div>${escapeHtml(res.reply)}</div>
+          <div class="chat-meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
+            <span>${escapeHtml(res.model)} • ${res.latency_ms}ms • ${res.characters} chars (${res.sms_parts} SMS part)</span>
+          </div>
+        `;
+      } else {
+        aiBubble.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+        aiBubble.innerHTML = `
+          <div style="color: #fca5a5;">⚠️ ${escapeHtml(res.error || 'Failed to generate response')}</div>
+          <div class="chat-meta">
+            <span>Error Status • Check GEMINI_API_KEY</span>
+          </div>
+        `;
+      }
+
+      if (chatThread) {
+        chatThread.appendChild(aiBubble);
+        chatThread.scrollTop = chatThread.scrollHeight;
+      }
+
+      // Update telemetry items
+      const latEl = document.getElementById('ai-test-latency');
+      const charsEl = document.getElementById('ai-test-chars');
+      const partsEl = document.getElementById('ai-test-parts');
+
+      if (latEl) latEl.textContent = `${res.latency_ms || 0} ms`;
+      if (charsEl) charsEl.textContent = `${res.characters || 0} chars`;
+      if (partsEl) partsEl.textContent = `${res.sms_parts || 0} part(s)`;
+
+    } catch (err) {
+      const ind = document.getElementById('ai-typing-ind');
+      if (ind) ind.remove();
+
+      showToast(err.message || 'Error communicating with AI endpoint', 'error');
+
+      const errBubble = document.createElement('div');
+      errBubble.className = 'chat-bubble chat-bubble-ai';
+      errBubble.style.borderColor = 'rgba(244, 63, 94, 0.4)';
+      errBubble.innerHTML = `
+        <div style="color: #fca5a5;">⚠️ ${escapeHtml(err.message || 'API request failed')}</div>
+      `;
+      if (chatThread) {
+        chatThread.appendChild(errBubble);
+        chatThread.scrollTop = chatThread.scrollHeight;
+      }
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      if (input) input.focus();
+    }
+  }
+
+  function setupAiEventListeners() {
+    // Form submission
+    const form = document.getElementById('ai-config-form');
+    if (form) form.addEventListener('submit', saveAiConfiguration);
+
+    // Quick toggle header switch
+    const quickToggle = document.getElementById('ai-quick-toggle');
+    const formToggle = document.getElementById('ai-cfg-toggle');
+    if (quickToggle && formToggle) {
+      quickToggle.addEventListener('change', () => {
+        formToggle.checked = quickToggle.checked;
+        saveAiConfiguration();
+      });
+      formToggle.addEventListener('change', () => {
+        quickToggle.checked = formToggle.checked;
+      });
+    }
+
+    // Toggle API key visibility
+    const toggleKeyBtn = document.getElementById('btn-toggle-ai-key-vis');
+    const keyInput = document.getElementById('ai-cfg-api-key');
+    if (toggleKeyBtn && keyInput) {
+      toggleKeyBtn.addEventListener('click', () => {
+        keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
+      });
+    }
+
+    // Prompt live counter
+    const promptInput = document.getElementById('ai-cfg-prompt');
+    if (promptInput) {
+      promptInput.addEventListener('input', updatePromptCounter);
+    }
+
+    // Sliders
+    const tokensSlider = document.getElementById('ai-cfg-tokens');
+    const tokensVal = document.getElementById('ai-tokens-val');
+    if (tokensSlider && tokensVal) {
+      tokensSlider.addEventListener('input', () => { tokensVal.textContent = tokensSlider.value; });
+    }
+
+    const tempSlider = document.getElementById('ai-cfg-temp');
+    const tempVal = document.getElementById('ai-temp-val');
+    if (tempSlider && tempVal) {
+      tempSlider.addEventListener('input', () => { tempVal.textContent = tempSlider.value; });
+    }
+
+    // Prompt presets
+    document.querySelectorAll('.preset-chip[data-preset]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const pKey = chip.getAttribute('data-preset');
+        if (AI_PROMPT_PRESETS[pKey] && promptInput) {
+          promptInput.value = AI_PROMPT_PRESETS[pKey];
+          updatePromptCounter();
+          showToast(`Loaded ${chip.textContent.trim()} prompt template`, 'info');
+        }
+      });
+    });
+
+    // Test send button & enter key
+    const sendBtn = document.getElementById('btn-send-ai-test');
+    const testInput = document.getElementById('ai-test-input');
+    if (sendBtn) sendBtn.addEventListener('click', triggerPlaygroundTest);
+    if (testInput) {
+      testInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          triggerPlaygroundTest();
+        }
+      });
+    }
+
+    // Sample simulation chips
+    document.querySelectorAll('.sim-sample-prompt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sampleText = btn.getAttribute('data-text');
+        if (testInput && sampleText) {
+          testInput.value = sampleText;
+          triggerPlaygroundTest();
+        }
+      });
+    });
+
+    // Clear chat
+    const clearBtn = document.getElementById('btn-clear-chat');
+    const chatThread = document.getElementById('ai-chat-thread');
+    if (clearBtn && chatThread) {
+      clearBtn.addEventListener('click', () => {
+        chatThread.innerHTML = `
+          <div style="text-align: center; margin: 10px 0;">
+            <span style="background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 12px; font-size: 10px; color: var(--text-dim);">SMS Gateway Live Simulation</span>
+          </div>
+          <div class="chat-bubble chat-bubble-ai">
+            <div>Chat thread cleared. Enter any question to test.</div>
+          </div>
+        `;
+        showToast('Playground chat cleared', 'info');
+      });
+    }
+
+    // Dynamic phone clock
+    const clockEl = document.getElementById('phone-sim-clock');
+    if (clockEl) {
+      const updateClock = () => {
+        clockEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      };
+      updateClock();
+      setInterval(updateClock, 30000);
+    }
+  }
+
   // --- Initialize Application on Load ---
   document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
+    setupAiEventListeners();
 
     // Hook Git sync button in modal
     const syncBtn = document.getElementById('btn-trigger-git-sync');

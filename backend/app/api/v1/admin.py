@@ -750,3 +750,186 @@ def trigger_system_git_sync(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.get("error"))
     return result
 
+
+# -------------------------------------------------------------
+# 14. Google AI Studio (Gemini) Intelligence Configuration
+# -------------------------------------------------------------
+class AiConfigResponse(BaseModel):
+    ai_auto_reply_enabled: bool
+    gemini_api_key_set: bool
+    gemini_api_key_masked: str
+    gemini_model: str
+    ai_system_prompt: str
+    ai_max_output_tokens: int
+    ai_temperature: float
+    ai_reply_sender_name: str
+    env_file_path: str
+
+
+class AiConfigUpdateRequest(BaseModel):
+    ai_auto_reply_enabled: bool
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = Field("gemini-1.5-flash", min_length=1)
+    ai_system_prompt: str = Field(..., min_length=1)
+    ai_max_output_tokens: int = Field(150, ge=30, le=1000)
+    ai_temperature: float = Field(0.7, ge=0.0, le=1.0)
+    ai_reply_sender_name: Optional[str] = None
+
+
+class AiPlaygroundTestRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    system_instruction: Optional[str] = None
+    model: Optional[str] = None
+
+
+class AiPlaygroundTestResponse(BaseModel):
+    status: str
+    reply: Optional[str] = None
+    model: str
+    latency_ms: int = 0
+    characters: int = 0
+    sms_parts: int = 0
+    error: Optional[str] = None
+
+
+@router.get("/ai-config", response_model=AiConfigResponse)
+def get_ai_configuration(
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Returns the active AI configuration with API key safely masked."""
+    from app.services.ai_service import find_env_file_path
+
+    key = settings.GEMINI_API_KEY or ""
+    masked = ""
+    if key and len(key) > 8:
+        masked = f"{key[:6]}...{key[-4:]}"
+    elif key:
+        masked = "••••••••"
+
+    return AiConfigResponse(
+        ai_auto_reply_enabled=settings.AI_AUTO_REPLY_ENABLED,
+        gemini_api_key_set=bool(key.strip()),
+        gemini_api_key_masked=masked,
+        gemini_model=settings.GEMINI_MODEL,
+        ai_system_prompt=settings.AI_SYSTEM_PROMPT,
+        ai_max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+        ai_temperature=settings.AI_TEMPERATURE,
+        ai_reply_sender_name=settings.AI_REPLY_SENDER_NAME or "",
+        env_file_path=find_env_file_path(),
+    )
+
+
+@router.post("/ai-config", response_model=AiConfigResponse)
+def update_ai_configuration(
+    payload: AiConfigUpdateRequest,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Updates the runtime AI configuration and writes the changes directly into the server's .env file.
+    """
+    from app.services.ai_service import persist_ai_config_to_env, find_env_file_path
+
+    env_updates: Dict[str, Any] = {
+        "AI_AUTO_REPLY_ENABLED": payload.ai_auto_reply_enabled,
+        "GEMINI_MODEL": payload.gemini_model.strip(),
+        "AI_SYSTEM_PROMPT": payload.ai_system_prompt.strip(),
+        "AI_MAX_OUTPUT_TOKENS": payload.ai_max_output_tokens,
+        "AI_TEMPERATURE": payload.ai_temperature,
+        "AI_REPLY_SENDER_NAME": (payload.ai_reply_sender_name or "").strip(),
+    }
+
+    # Only update the API key if explicitly passed (not empty)
+    if payload.gemini_api_key is not None and payload.gemini_api_key.strip():
+        env_updates["GEMINI_API_KEY"] = payload.gemini_api_key.strip()
+
+    env_path = persist_ai_config_to_env(env_updates)
+
+    record_audit_event(
+        db,
+        action="ai.config_updated",
+        actor_type="admin",
+        actor_id=admin.get("sub", "admin"),
+        details={
+            "enabled": payload.ai_auto_reply_enabled,
+            "model": payload.gemini_model,
+            "key_updated": bool(payload.gemini_api_key and payload.gemini_api_key.strip()),
+            "env_path": env_path,
+        },
+    )
+
+    key = settings.GEMINI_API_KEY or ""
+    masked = ""
+    if key and len(key) > 8:
+        masked = f"{key[:6]}...{key[-4:]}"
+    elif key:
+        masked = "••••••••"
+
+    return AiConfigResponse(
+        ai_auto_reply_enabled=settings.AI_AUTO_REPLY_ENABLED,
+        gemini_api_key_set=bool(key.strip()),
+        gemini_api_key_masked=masked,
+        gemini_model=settings.GEMINI_MODEL,
+        ai_system_prompt=settings.AI_SYSTEM_PROMPT,
+        ai_max_output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+        ai_temperature=settings.AI_TEMPERATURE,
+        ai_reply_sender_name=settings.AI_REPLY_SENDER_NAME or "",
+        env_file_path=env_path,
+    )
+
+
+@router.post("/ai-test", response_model=AiPlaygroundTestResponse)
+def test_ai_playground_prompt(
+    payload: AiPlaygroundTestRequest,
+    admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """
+    Executes a real-time prompt generation via Gemini, measuring latency and SMS part counts.
+    """
+    from app.services.ai_service import generate_gemini_reply
+    from app.services.message_service import calculate_sms_parts
+
+    if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.strip():
+        return AiPlaygroundTestResponse(
+            status="unconfigured",
+            reply=None,
+            model=payload.model or settings.GEMINI_MODEL,
+            latency_ms=0,
+            characters=0,
+            sms_parts=0,
+            error="GEMINI_API_KEY is not configured. Please paste your Google AI Studio API key in the configuration panel above and click Save.",
+        )
+
+    start_time = time.time()
+    chosen_model = payload.model or settings.GEMINI_MODEL
+    sys_prompt = payload.system_instruction or settings.AI_SYSTEM_PROMPT
+
+    reply = generate_gemini_reply(
+        prompt=payload.message,
+        system_instruction=sys_prompt,
+        model_override=chosen_model,
+    )
+    elapsed_ms = int((time.time() - start_time) * 1000)
+
+    if not reply:
+        return AiPlaygroundTestResponse(
+            status="error",
+            reply=None,
+            model=chosen_model,
+            latency_ms=elapsed_ms,
+            characters=0,
+            sms_parts=0,
+            error="Failed to generate AI response. Please check your GEMINI_API_KEY or network connection.",
+        )
+
+    parts = calculate_sms_parts(reply)
+
+    return AiPlaygroundTestResponse(
+        status="success",
+        reply=reply,
+        model=chosen_model,
+        latency_ms=elapsed_ms,
+        characters=len(reply),
+        sms_parts=parts,
+    )
+

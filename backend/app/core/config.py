@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,21 @@ class Settings(BaseSettings):
     # Admin Credentials
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "hemy@2004"
+
+    # AI & Google AI Studio (Gemini) Settings
+    GEMINI_API_KEY: Optional[str] = None
+    AI_AUTO_REPLY_ENABLED: bool = True
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+    AI_SYSTEM_PROMPT: str = (
+        "Wewe ni msaidizi mahiri wa SMS wa biashara yetu. "
+        "Jibu kwa lugha ileile ya mteja (Kiswahili au Kiingereza). "
+        "Toa majibu mafupi, yenye heshima, na kueleweka moja kwa moja (yasizidi herufi 160 inapowezekana, ukomo herufi 300). "
+        "USITUMIE alama za markdown (kama nyota *, herufi nene, vichwa vya habari #, au bullet points) "
+        "kwa sababu ujumbe huu unatumwa kama SMS ya kawaida kwenye simu ya mkononi."
+    )
+    AI_MAX_OUTPUT_TOKENS: int = 150
+    AI_TEMPERATURE: float = 0.7
+    AI_REPLY_SENDER_NAME: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
