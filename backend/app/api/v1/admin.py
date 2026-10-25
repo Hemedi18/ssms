@@ -886,7 +886,7 @@ def test_ai_playground_prompt(
     """
     Executes a real-time prompt generation via Gemini, measuring latency and SMS part counts.
     """
-    from app.services.ai_service import generate_gemini_reply
+    from app.services.ai_service import generate_gemini_reply, get_last_ai_error
     from app.services.message_service import calculate_sms_parts
 
     if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.strip():
@@ -912,6 +912,7 @@ def test_ai_playground_prompt(
     elapsed_ms = int((time.time() - start_time) * 1000)
 
     if not reply:
+        err_msg = get_last_ai_error() or "Failed to generate AI response. Please check your GEMINI_API_KEY or network connection."
         return AiPlaygroundTestResponse(
             status="error",
             reply=None,
@@ -919,7 +920,7 @@ def test_ai_playground_prompt(
             latency_ms=elapsed_ms,
             characters=0,
             sms_parts=0,
-            error="Failed to generate AI response. Please check your GEMINI_API_KEY or network connection.",
+            error=err_msg,
         )
 
     parts = calculate_sms_parts(reply)

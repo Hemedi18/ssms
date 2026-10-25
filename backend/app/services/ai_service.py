@@ -126,6 +126,26 @@ def get_conversation_history(
     return history
 
 
+# Global tracking for the last AI communication error
+_last_ai_error: Optional[str] = None
+
+# Aliases to map legacy or deprecated Gemini model names to active Google AI Studio models
+MODEL_ALIASES = {
+    "gemini-1.5-flash": "gemini-3.5-flash-lite",
+    "gemini-1.5-pro": "gemini-3.5-flash",
+    "gemini-2.0-flash": "gemini-3.5-flash-lite",
+    "gemini-2.5-flash": "gemini-3.5-flash-lite",
+    "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-2.5-pro": "gemini-3.5-flash",
+}
+
+
+def get_last_ai_error() -> Optional[str]:
+    """Returns the most recent Gemini API error message, if any."""
+    global _last_ai_error
+    return _last_ai_error
+
+
 def generate_gemini_reply(
     prompt: str,
     history: Optional[List[Dict[str, Any]]] = None,
@@ -135,16 +155,20 @@ def generate_gemini_reply(
     """
     Calls Google AI Studio (Gemini REST API) using httpx.
     Returns cleaned SMS reply text or None if error/unconfigured.
+    Automatically handles deprecated model aliasing and fallback.
     """
+    global _last_ai_error
+    _last_ai_error = None
+
     api_key = settings.GEMINI_API_KEY
     if not api_key or not api_key.strip():
+        _last_ai_error = "GEMINI_API_KEY is not configured in .env."
         logger.warning("GEMINI_API_KEY is not configured in .env. Skipping AI auto-reply.")
         return None
 
-    model = model_override or settings.GEMINI_MODEL or "gemini-1.5-flash"
+    raw_model = model_override or settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
+    model = MODEL_ALIASES.get(raw_model.strip(), raw_model.strip())
     sys_prompt = system_instruction or settings.AI_SYSTEM_PROMPT
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key.strip()}"
 
     # Build contents with history if available
     contents: List[Dict[str, Any]] = []
@@ -161,7 +185,7 @@ def generate_gemini_reply(
     payload: Dict[str, Any] = {
         "contents": contents,
         "generationConfig": {
-            "maxOutputTokens": settings.AI_MAX_OUTPUT_TOKENS,
+            "maxOutputTokens": max(settings.AI_MAX_OUTPUT_TOKENS, 250),
             "temperature": settings.AI_TEMPERATURE,
         }
     }
@@ -171,34 +195,70 @@ def generate_gemini_reply(
             "parts": [{"text": sys_prompt.strip()}]
         }
 
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            response = client.post(url, json=payload)
+    # Attempt primary model, with automatic fallback to gemini-3.5-flash-lite if 404
+    models_to_try = [model]
+    if model != "gemini-3.5-flash-lite":
+        models_to_try.append("gemini-3.5-flash-lite")
 
-            if response.status_code == 200:
-                data = response.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts and "text" in parts[0]:
-                        raw_reply = parts[0]["text"]
-                        cleaned = clean_sms_text(raw_reply)
-                        logger.info(f"Gemini AI generated reply ({len(cleaned)} chars): '{cleaned}'")
-                        return cleaned
-                logger.warning(f"Gemini API returned 200 but no candidates: {data}")
-                return None
-            else:
-                logger.error(
-                    f"Gemini API error (HTTP {response.status_code}): {response.text}"
-                )
+    last_response_text = ""
+    for candidate_model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent?key={api_key.strip()}"
+        try:
+            with httpx.Client(timeout=25.0) as client:
+                response = client.post(url, json=payload)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        # Extract text, skipping reasoning/thought parts
+                        text_chunks = [
+                            p.get("text", "") for p in parts
+                            if isinstance(p, dict) and p.get("text") and not p.get("thought")
+                        ]
+                        if not text_chunks and parts:
+                            for p in parts:
+                                if isinstance(p, dict) and p.get("text"):
+                                    text_chunks.append(p["text"])
+
+                        if text_chunks:
+                            raw_reply = " ".join(text_chunks).strip()
+                            cleaned = clean_sms_text(raw_reply)
+                            logger.info(f"Gemini AI ({candidate_model}) generated reply ({len(cleaned)} chars): '{cleaned}'")
+                            return cleaned
+
+                    logger.warning(f"Gemini API returned 200 but no candidates: {data}")
+                    _last_ai_error = "Gemini returned empty candidate response."
+                    return None
+
+                last_response_text = response.text
+                # If 404 (model not found / deprecated) and we have a fallback, try next model
+                if response.status_code == 404 and candidate_model != models_to_try[-1]:
+                    logger.warning(f"Model {candidate_model} returned 404, falling back to {models_to_try[-1]}...")
+                    continue
+
+                logger.error(f"Gemini API error (HTTP {response.status_code}): {response.text}")
+                try:
+                    err_json = response.json()
+                    _last_ai_error = err_json.get("error", {}).get("message", f"HTTP {response.status_code}: {response.text[:150]}")
+                except Exception:
+                    _last_ai_error = f"HTTP {response.status_code}: {response.text[:150]}"
                 return None
 
-    except httpx.TimeoutException:
-        logger.error("Gemini API call timed out after 15s.")
-        return None
-    except Exception as e:
-        logger.error(f"Failed to communicate with Google AI Studio: {e}", exc_info=True)
-        return None
+        except httpx.TimeoutException:
+            logger.error(f"Gemini API call timed out after 25s for model {candidate_model}.")
+            _last_ai_error = "Gemini request timed out (25s). Check network connection."
+            if candidate_model != models_to_try[-1]:
+                continue
+            return None
+        except Exception as e:
+            logger.error(f"Failed to communicate with Google AI Studio: {e}", exc_info=True)
+            _last_ai_error = str(e)
+            return None
+
+    _last_ai_error = f"Failed to generate response: {last_response_text[:150]}"
+    return None
 
 
 def process_incoming_sms_with_ai(

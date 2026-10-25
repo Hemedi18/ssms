@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # AI & Google AI Studio (Gemini) Settings
     GEMINI_API_KEY: Optional[str] = None
     AI_AUTO_REPLY_ENABLED: bool = True
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     AI_SYSTEM_PROMPT: str = (
         "Wewe ni msaidizi mahiri wa SMS wa biashara yetu. "
         "Jibu kwa lugha ileile ya mteja (Kiswahili au Kiingereza). "
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         "USITUMIE alama za markdown (kama nyota *, herufi nene, vichwa vya habari #, au bullet points) "
         "kwa sababu ujumbe huu unatumwa kama SMS ya kawaida kwenye simu ya mkononi."
     )
-    AI_MAX_OUTPUT_TOKENS: int = 150
+    AI_MAX_OUTPUT_TOKENS: int = 300
     AI_TEMPERATURE: float = 0.7
     AI_REPLY_SENDER_NAME: Optional[str] = None
 

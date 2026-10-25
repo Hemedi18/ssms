@@ -2252,7 +2252,13 @@
       if (statModel) statModel.textContent = cfg.gemini_model;
 
       const modelSelect = document.getElementById('ai-cfg-model');
-      if (modelSelect) modelSelect.value = cfg.gemini_model;
+      if (modelSelect) {
+        let m = cfg.gemini_model || 'gemini-3.5-flash-lite';
+        if (m.includes('1.5') || m.includes('2.0') || m.includes('2.5')) {
+          m = 'gemini-3.5-flash-lite';
+        }
+        modelSelect.value = m;
+      }
 
       const statKeyStatus = document.getElementById('ai-stat-key-status');
       const statKeyMasked = document.getElementById('ai-stat-key-masked');
