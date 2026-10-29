@@ -208,12 +208,42 @@
     });
   }
 
-  // --- Mobile Sidebar Toggle ---
-  if (mobileMenuBtn && appSidebar) {
-    mobileMenuBtn.addEventListener('click', () => {
-      appSidebar.classList.toggle('open');
-    });
+  // --- Mobile Sidebar & Drawer Toggle ---
+  const mobileNavOverlay = document.getElementById('mobile-nav-overlay');
+  const mobileMoreMenuBtn = document.getElementById('mobile-more-menu-btn');
+
+  function toggleMobileSidebar(openState) {
+    if (!appSidebar) return;
+    const shouldOpen = openState !== undefined ? openState : !appSidebar.classList.contains('open');
+    appSidebar.classList.toggle('open', shouldOpen);
+    if (mobileNavOverlay) {
+      mobileNavOverlay.classList.toggle('active', shouldOpen);
+    }
   }
+
+  if (mobileMenuBtn) {
+    mobileMenuBtn.addEventListener('click', () => toggleMobileSidebar());
+  }
+
+  if (mobileMoreMenuBtn) {
+    mobileMoreMenuBtn.addEventListener('click', () => toggleMobileSidebar());
+  }
+
+  if (mobileNavOverlay) {
+    mobileNavOverlay.addEventListener('click', () => toggleMobileSidebar(false));
+  }
+
+  // --- Mobile Bottom Navigation Click Handling ---
+  document.querySelectorAll('.mobile-bottom-bar .mobile-nav-btn[data-tab]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const tab = btn.getAttribute('data-tab');
+      if (tab) {
+        switchTab(tab);
+        toggleMobileSidebar(false);
+      }
+    });
+  });
 
   // --- Tab Navigation ---
   document.querySelectorAll('.sidebar-nav .nav-item').forEach((item) => {
@@ -222,9 +252,7 @@
       const tab = item.getAttribute('data-tab');
       if (tab) {
         switchTab(tab);
-        if (window.innerWidth <= 768 && appSidebar) {
-          appSidebar.classList.remove('open');
-        }
+        toggleMobileSidebar(false);
       }
     });
   });
@@ -232,6 +260,10 @@
   function switchTab(tabName) {
     currentTab = tabName;
     document.querySelectorAll('.sidebar-nav .nav-item').forEach((el) => {
+      el.classList.toggle('active', el.getAttribute('data-tab') === tabName);
+    });
+
+    document.querySelectorAll('.mobile-bottom-bar .mobile-nav-btn[data-tab]').forEach((el) => {
       el.classList.toggle('active', el.getAttribute('data-tab') === tabName);
     });
 
@@ -243,6 +275,9 @@
     if (activeSection) {
       activeSection.style.display = 'block';
     }
+
+    // Scroll to top on mobile tab switch
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     loadActiveTab();
   }
