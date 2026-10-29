@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -93,7 +94,28 @@ fun ReceivedMessagesScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(filtered) { msg ->
-                        IncomingMessageCard(message = msg, dateFormat = dateFormat)
+                        var isAiOn by remember(msg.fromNumber) {
+                            mutableStateOf(viewModel.prefs.isAiEnabledForContact(msg.fromNumber))
+                        }
+                        var isBlocked by remember(msg.fromNumber) {
+                            mutableStateOf(viewModel.prefs.isContactBlocked(msg.fromNumber))
+                        }
+
+                        IncomingMessageCard(
+                            message = msg,
+                            dateFormat = dateFormat,
+                            isAiEnabled = isAiOn,
+                            isBlocked = isBlocked,
+                            onToggleAi = { enabled ->
+                                isAiOn = enabled
+                                viewModel.prefs.setAiEnabledForContact(msg.fromNumber, enabled)
+                            },
+                            onToggleBlock = { blocked ->
+                                isBlocked = blocked
+                                if (blocked) isAiOn = false
+                                viewModel.prefs.setContactBlocked(msg.fromNumber, blocked)
+                            }
+                        )
                     }
                     item {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -107,7 +129,11 @@ fun ReceivedMessagesScreen(
 @Composable
 fun IncomingMessageCard(
     message: LocalIncomingMessage,
-    dateFormat: SimpleDateFormat
+    dateFormat: SimpleDateFormat,
+    isAiEnabled: Boolean = true,
+    isBlocked: Boolean = false,
+    onToggleAi: (Boolean) -> Unit = {},
+    onToggleBlock: (Boolean) -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -121,12 +147,29 @@ fun IncomingMessageCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = message.fromNumber,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = TextPrimary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = message.fromNumber,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = TextPrimary
+                    )
+                    if (isBlocked) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = StatusRed.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "BLOCKED",
+                                color = StatusRed,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 StatusBadge(status = if (message.isSynced) "Synced" else "Pending Sync")
             }
             Spacer(modifier = Modifier.height(6.dp))
@@ -136,6 +179,43 @@ fun IncomingMessageCard(
                 color = TextSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Smart Switch & Contact Action Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (isBlocked) "AI Blocked" else if (isAiEnabled) "AI Auto-Reply ON" else "AI Auto-Reply OFF",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isBlocked) TextMuted else if (isAiEnabled) StatusGreen else TextMuted
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Switch(
+                        checked = isAiEnabled && !isBlocked,
+                        onCheckedChange = { onToggleAi(it) },
+                        enabled = !isBlocked,
+                        modifier = Modifier.scale(0.75f)
+                    )
+                }
+
+                TextButton(
+                    onClick = { onToggleBlock(!isBlocked) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (isBlocked) "Unblock" else "Block",
+                        fontSize = 11.sp,
+                        color = if (isBlocked) AccentBlue else StatusRed,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween

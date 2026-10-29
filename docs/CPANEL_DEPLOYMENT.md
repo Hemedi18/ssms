@@ -155,3 +155,31 @@ Whenever you make changes to backend code or settings:
 
 ### Step 6: Emergency Kill Switch
 - In case of network anomalies, click the **Emergency Kill Switch** button in the top navigation bar to immediately halt outbound job leasing across devices without losing queued messages or dropping incoming webhooks.
+
+---
+
+## 7. AI Auto-Response Control & Owner Escalation (Email Forwarder Setup)
+
+### Setting Up cPanel Email Forwarder for Owner Alerts:
+When a customer sends an SMS containing **"I need to communicate with owner"** (or in Swahili *"nataka kuongea na mmliki/bosi"*):
+1. The AI auto-response is **immediately paused** for that specific customer.
+2. An urgent alert email is dispatched to `notifications@edusphere.co.tz` and `hemedimdoe18@gmail.com`.
+
+**To ensure forwarders are active in cPanel:**
+1. Log into your cPanel account for `edusphere.co.tz`.
+2. Navigate to **Email > Forwarders** (`/cpsess.../email/fwd.html`).
+3. Click **Add Forwarder**.
+4. In **Address to Forward**, enter:
+   - `notifications` @ `edusphere.co.tz`
+5. In **Destination**, select **Forward to Email Address** and enter:
+   - `hemedimdoe18@gmail.com`
+6. Click **Add Forwarder**.
+7. Now, every alert delivered to `notifications@edusphere.co.tz` will automatically copy `hemedimdoe18@gmail.com` in real time with the customer's phone number and full recent chat transcript.
+
+### Managing AI Smart Switch & Blocked Numbers:
+- **On the Android Gateway App:**
+  - In **Received Messages**, each message card features a **Smart Switch** to toggle AI replies ON/OFF for that contact, plus a **Block** button.
+  - In **Message Details**, you can view and control the contact's AI auto-reply state or unblock them at any time.
+- **On the Backend API:**
+  - `GET /api/v1/incoming/chat-preferences` lists all per-number preferences.
+  - `POST /api/v1/incoming/chat-preferences` allows updating `is_ai_enabled`, `is_blocked`, and `is_escalated`.

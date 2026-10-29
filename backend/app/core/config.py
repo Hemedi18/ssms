@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     AI_TEMPERATURE: float = 0.7
     AI_REPLY_SENDER_NAME: Optional[str] = None
 
+    # Alert & Owner Escalation Settings
+    NOTIFICATION_EMAIL: str = "notifications@edusphere.co.tz"
+    ALERT_FORWARD_EMAIL: str = "hemedimdoe18@gmail.com"
+    SMTP_HOST: Optional[str] = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

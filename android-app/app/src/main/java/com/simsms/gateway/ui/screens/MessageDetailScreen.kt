@@ -133,6 +133,81 @@ fun MessageDetailScreen(
                             DetailRow("Synced to Server", if (incoming.isSynced) "Yes (Synced)" else "Pending Network Sync")
                             DetailRow("Message Hash", (incoming.rawPduHash ?: "N/A").take(16) + "...", isMono = true)
                             DetailRow("Local ID", incoming.id.toString(), isMono = true)
+
+                            HorizontalDivider(color = BorderSubtle)
+
+                            // AI Auto-Response Control per Chat
+                            var isAiOn by remember(incoming.fromNumber) {
+                                mutableStateOf(viewModel.prefs.isAiEnabledForContact(incoming.fromNumber))
+                            }
+                            var isBlocked by remember(incoming.fromNumber) {
+                                mutableStateOf(viewModel.prefs.isContactBlocked(incoming.fromNumber))
+                            }
+
+                            Text("AI AUTO-RESPONSE CONTROLS", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = TextSecondary)
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Smart Switch for this Contact",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (isBlocked) "Contact is blocked. AI replies disabled."
+                                               else if (isAiOn) "AI responds automatically to this contact."
+                                               else "AI is paused for this contact.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Switch(
+                                    checked = isAiOn && !isBlocked,
+                                    onCheckedChange = { enabled ->
+                                        isAiOn = enabled
+                                        viewModel.prefs.setAiEnabledForContact(incoming.fromNumber, enabled)
+                                    },
+                                    enabled = !isBlocked,
+                                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryBlue)
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Block User",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Blocked users never receive AI auto-replies.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Button(
+                                    onClick = {
+                                        val newState = !isBlocked
+                                        isBlocked = newState
+                                        if (newState) isAiOn = false
+                                        viewModel.prefs.setContactBlocked(incoming.fromNumber, newState)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isBlocked) AccentBlue else StatusRed
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(if (isBlocked) "Unblock" else "Block User")
+                                }
+                            }
                         }
                     }
                 }

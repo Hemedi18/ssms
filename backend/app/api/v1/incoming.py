@@ -130,3 +130,81 @@ def get_incoming_messages(
         db, from_number=from_number, limit=limit, offset=offset
     )
     return messages
+
+
+class ChatPreferencePayload(BaseModel):
+    phone_number: str
+    contact_name: Optional[str] = None
+    is_ai_enabled: bool = True
+    is_blocked: bool = False
+    is_escalated: bool = False
+
+
+@router.get("/incoming/chat-preferences")
+def get_chat_preferences(
+    phone_number: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Returns AI control preferences (smart switch, blocked, escalated) for numbers."""
+    from app.models.chat_ai_preference import ChatAiPreference
+    from sqlalchemy import select
+    query = select(ChatAiPreference)
+    if phone_number:
+        query = query.where(ChatAiPreference.phone_number.contains(phone_number))
+    records = db.scalars(query).all()
+    return [
+        {
+            "phone_number": r.phone_number,
+            "contact_name": r.contact_name,
+            "is_ai_enabled": r.is_ai_enabled,
+            "is_blocked": r.is_blocked,
+            "is_escalated": r.is_escalated,
+            "escalated_at": r.escalated_at.isoformat() if r.escalated_at else None,
+        }
+        for r in records
+    ]
+
+
+@router.post("/incoming/chat-preferences")
+def update_chat_preference(
+    payload: ChatPreferencePayload,
+    db: Session = Depends(get_db),
+):
+    """Creates or updates per-chat AI smart switch and blocking."""
+    from app.models.chat_ai_preference import ChatAiPreference
+    from app.utils.phone_tz import normalize_tz_phone
+    from sqlalchemy import select
+
+    try:
+        norm_phone = normalize_tz_phone(payload.phone_number, default_country_code=settings.DEFAULT_COUNTRY_CODE)
+    except Exception:
+        norm_phone = payload.phone_number
+
+    pref = db.scalar(
+        select(ChatAiPreference).where(ChatAiPreference.phone_number == norm_phone)
+    )
+    if not pref:
+        pref = ChatAiPreference(
+            phone_number=norm_phone,
+            contact_name=payload.contact_name,
+            is_ai_enabled=payload.is_ai_enabled,
+            is_blocked=payload.is_blocked,
+            is_escalated=payload.is_escalated,
+        )
+        db.add(pref)
+    else:
+        pref.is_ai_enabled = payload.is_ai_enabled
+        pref.is_blocked = payload.is_blocked
+        pref.is_escalated = payload.is_escalated
+        if payload.contact_name:
+            pref.contact_name = payload.contact_name
+
+    db.commit()
+    db.refresh(pref)
+    return {
+        "status": "success",
+        "phone_number": pref.phone_number,
+        "is_ai_enabled": pref.is_ai_enabled,
+        "is_blocked": pref.is_blocked,
+        "is_escalated": pref.is_escalated,
+    }

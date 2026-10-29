@@ -10,10 +10,47 @@ from app.core.database import SessionLocal
 from app.core.logging import logger
 from app.models.incoming_message import IncomingMessage
 from app.models.message import Message
+from app.models.dnd_and_moderation import DndBlacklist
+from app.models.chat_ai_preference import ChatAiPreference
 from app.schemas.message import MessageCreate
 from app.services.message_service import create_message
 from app.services.webhook_service import queue_event
+from app.services.email_notification_service import send_owner_escalation_alert
 from app.utils.phone_tz import is_opt_out_keyword, normalize_tz_phone
+
+
+def is_owner_communication_request(text: str) -> bool:
+    """
+    Detects if the user is asking to speak with the human owner/manager.
+    Examples:
+    - 'i need to communicate with owner'
+    - 'communicate with owner'
+    - 'talk to the boss' / 'speak to manager'
+    - 'nataka kuongea na mmliki' / 'ongea na mwenyewe' / 'nataka boss'
+    """
+    if not text:
+        return False
+    t = text.lower().strip()
+    patterns = [
+        r"communicate with (the )?owner",
+        r"talk to (the )?owner",
+        r"speak to (the )?(owner|boss|manager)",
+        r"contact (the )?owner",
+        r"reach (the )?owner",
+        r"need (the )?owner",
+        r"ongea na (mwenye(we)?|bosi|boss|meneja|mmliki|muuzaji)",
+        r"kuongea na (mwenye(we)?|bosi|boss|meneja|mmliki|muuzaji)",
+        r"wasiliana na (mwenye(we)?|bosi|boss|meneja|mmliki)",
+        r"nataka kuongea na mtu",
+        r"talk to human",
+        r"talk to agent",
+        r"speak with human",
+        r"real person",
+    ]
+    for pat in patterns:
+        if re.search(pat, t, re.IGNORECASE):
+            return True
+    return False
 
 
 def clean_sms_text(text: str) -> str:
@@ -298,6 +335,94 @@ def process_incoming_sms_with_ai(
         # Check TCRA opt-out keywords (STOP, ONDOA, JIONDOE)
         if is_opt_out_keyword(incoming.body):
             logger.info(f"Skipping AI reply for opt-out SMS from {incoming.from_number}")
+            return None
+
+        # Check if user is blocked or has AI toggled off in ChatAiPreference
+        try:
+            norm_from = normalize_tz_phone(incoming.from_number, default_country_code=settings.DEFAULT_COUNTRY_CODE)
+        except Exception:
+            norm_from = incoming.from_number
+
+        # 1. Check DND Blacklist (blocked user)
+        dnd_blocked = db.scalar(
+            select(DndBlacklist).where(
+                or_(
+                    DndBlacklist.phone_number == incoming.from_number,
+                    DndBlacklist.phone_number == norm_from,
+                )
+            )
+        )
+        if dnd_blocked:
+            logger.info(f"User {incoming.from_number} is blocked in DND list. AI will not reply.")
+            return None
+
+        # 2. Check per-chat AI preferences (Smart Switch & Block status)
+        chat_pref = db.scalar(
+            select(ChatAiPreference).where(
+                or_(
+                    ChatAiPreference.phone_number == incoming.from_number,
+                    ChatAiPreference.phone_number == norm_from,
+                )
+            )
+        )
+        if chat_pref:
+            if chat_pref.is_blocked:
+                logger.info(f"User {incoming.from_number} is marked as blocked. AI auto-reply suppressed.")
+                return None
+            if not chat_pref.is_ai_enabled:
+                logger.info(f"AI auto-reply is toggled OFF for chat {incoming.from_number}. Skipping.")
+                return None
+            if chat_pref.is_escalated:
+                logger.info(f"Chat {incoming.from_number} is in escalated human state. AI will not reply.")
+                return None
+
+        # 3. Check for Owner Escalation trigger ("I need to communicate with owner")
+        if is_owner_communication_request(incoming.body):
+            logger.info(f"Customer {incoming.from_number} requested human owner communication: '{incoming.body}'")
+            # Retrieve prior conversation context to include in email
+            escalation_history = get_conversation_history(db, incoming.from_number, limit=6)
+
+            # Mark chat as escalated & turn off AI for this chat
+            from datetime import datetime, timezone
+            if not chat_pref:
+                chat_pref = ChatAiPreference(
+                    phone_number=norm_from,
+                    is_ai_enabled=False,
+                    is_escalated=True,
+                    escalated_at=datetime.now(timezone.utc),
+                )
+                db.add(chat_pref)
+            else:
+                chat_pref.is_escalated = True
+                chat_pref.is_ai_enabled = False
+                chat_pref.escalated_at = datetime.now(timezone.utc)
+            db.commit()
+
+            # Dispatch urgent email notification to notifications@edusphere.co.tz and hemedimdoe18@gmail.com
+            send_owner_escalation_alert(
+                sender_phone=incoming.from_number,
+                incoming_text=incoming.body,
+                conversation_history=escalation_history,
+            )
+
+            # Send a courteous acknowledgment SMS to the user
+            ack_reply_ref = f"escalation-ack-{incoming.id}"
+            ack_msg = "Habari. Ujumbe wako umepokelewa na mmliki amearifiwa moja kwa moja. Atawasiliana nawe hivi punde. Asante."
+            ack_payload = MessageCreate(
+                to=incoming.from_number,
+                message=ack_msg,
+                sender_name=settings.AI_REPLY_SENDER_NAME,
+                client_reference=ack_reply_ref,
+                message_type="transactional",
+                priority=10,
+                tenant_id=incoming.tenant_id,
+            )
+            create_message(
+                db=db,
+                payload=ack_payload,
+                actor_id="escalation-alert-service",
+                tenant_id=incoming.tenant_id,
+            )
             return None
 
         # Idempotency check: avoid double-replying to the same incoming message

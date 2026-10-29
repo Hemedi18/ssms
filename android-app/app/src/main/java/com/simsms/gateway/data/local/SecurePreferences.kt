@@ -74,6 +74,43 @@ class SecurePreferences(context: Context) {
         get() = prefs.getInt(KEY_DAILY_SENT_COUNT, 0)
         set(value) = prefs.edit().putInt(KEY_DAILY_SENT_COUNT, value).apply()
 
+    // AI Control preferences
+    fun isAiEnabledForContact(phone: String): Boolean {
+        val disabledSet = prefs.getStringSet(KEY_AI_DISABLED_NUMBERS, emptySet()) ?: emptySet()
+        val cleanPhone = phone.trim().replace(" ", "")
+        return !disabledSet.contains(cleanPhone)
+    }
+
+    fun setAiEnabledForContact(phone: String, enabled: Boolean) {
+        val cleanPhone = phone.trim().replace(" ", "")
+        val disabledSet = (prefs.getStringSet(KEY_AI_DISABLED_NUMBERS, emptySet()) ?: emptySet()).toMutableSet()
+        if (enabled) {
+            disabledSet.remove(cleanPhone)
+        } else {
+            disabledSet.add(cleanPhone)
+        }
+        prefs.edit().putStringSet(KEY_AI_DISABLED_NUMBERS, disabledSet).apply()
+    }
+
+    fun isContactBlocked(phone: String): Boolean {
+        val blockedSet = prefs.getStringSet(KEY_BLOCKED_NUMBERS, emptySet()) ?: emptySet()
+        val cleanPhone = phone.trim().replace(" ", "")
+        return blockedSet.contains(cleanPhone)
+    }
+
+    fun setContactBlocked(phone: String, blocked: Boolean) {
+        val cleanPhone = phone.trim().replace(" ", "")
+        val blockedSet = (prefs.getStringSet(KEY_BLOCKED_NUMBERS, emptySet()) ?: emptySet()).toMutableSet()
+        if (blocked) {
+            blockedSet.add(cleanPhone)
+            // If blocked, also disable AI
+            setAiEnabledForContact(cleanPhone, false)
+        } else {
+            blockedSet.remove(cleanPhone)
+        }
+        prefs.edit().putStringSet(KEY_BLOCKED_NUMBERS, blockedSet).apply()
+    }
+
     fun clearCredentials() {
         prefs.edit()
             .remove(KEY_DEVICE_TOKEN)
@@ -93,5 +130,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_LAST_SYNC = "last_sync_timestamp"
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_DAILY_SENT_COUNT = "daily_sent_count"
+        private const val KEY_AI_DISABLED_NUMBERS = "ai_disabled_numbers"
+        private const val KEY_BLOCKED_NUMBERS = "blocked_numbers"
     }
 }

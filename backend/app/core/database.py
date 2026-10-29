@@ -39,6 +39,7 @@ def init_db() -> None:
     from app.models.bundle import SmsBundle
     from app.models.credit_transaction import CreditTransaction
     from app.models.dnd_and_moderation import DndBlacklist, ContentModerationRule
+    from app.models.chat_ai_preference import ChatAiPreference
 
     Base.metadata.create_all(bind=engine)
 
