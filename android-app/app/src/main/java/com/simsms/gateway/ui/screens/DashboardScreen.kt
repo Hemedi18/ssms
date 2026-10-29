@@ -222,12 +222,95 @@ fun DashboardScreen(
             }
 
             item {
-                MetricCard(
-                    title = "SMS Received on SIM",
-                    count = receivedCount,
-                    icon = Icons.Default.Inbox,
-                    iconColor = Color(0xFF8B5CF6)
-                )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onBottomNavigate(com.simsms.gateway.ui.navigation.Screen.ReceivedMessages.route) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF8B5CF6).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Inbox, contentDescription = null, tint = Color(0xFF8B5CF6))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("SMS Received on SIM", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                Text("$receivedCount messages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AccentBlue.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                "Manage AI & Chats →",
+                                color = AccentBlue,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Dedicated AI Smart Switch & Escalation banner on Dashboard
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onBottomNavigate(com.simsms.gateway.ui.navigation.Screen.ReceivedMessages.route) },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = NavyLight),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusGreen.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.SmartToy, contentDescription = null, tint = StatusGreen)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("AI Smart Controls Active", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(shape = RoundedCornerShape(4.dp), color = StatusGreen) {
+                                        Text("NEW", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                    }
+                                }
+                                Text("Smart switches per contact, blocked numbers & owner escalation active.", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+                            }
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
+                    }
+                }
             }
 
             item {
